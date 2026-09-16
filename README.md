@@ -89,7 +89,7 @@ Webhook 发送 JSON：`host`、`rule`、`state` (`firing` / `resolved`)、`value
 
 服务名必须在允许列表；服务控制需要 systemd 和相应权限。结束进程支持 TERM / KILL，拒绝 PID ≤ 1 和 servmon 自身，需提交详情返回的创建时间避免 PID 重用误杀，页面要求确认。操作在执行前后写入 `data_dir/audit.log`；审计不可写时返回 503 并拒绝执行。应用令牌在命令行详情中脱敏；其它进程的完整命令行属于监控数据，按需限制只读令牌的分享。
 
-Docker 自动检测 `/var/run/docker.sock`，不可用时隐藏面板；不引入 Docker SDK。容器资源统计参考 [Docker Engine API](https://docs.docker.com/reference/api/engine/version/v1.46/)。仅对列表中的容器开放控制。CPU 温度只接受已识别 CPU 传感器，无法读取时显示 `—`；磁盘 IO 的分区映射尽量匹配父设备，复杂 LVM / RAID 和权限不足时可能不可用。
+Docker 自动检测 `/var/run/docker.sock`，不可用时在 Docker 标签页显示状态提示；不引入 Docker SDK。容器资源统计参考 [Docker Engine API](https://docs.docker.com/reference/api/engine/version/v1.46/)。仅对列表中的容器开放控制。CPU 温度只接受已识别 CPU 传感器，无法读取时显示 `—`；磁盘 IO 的分区映射尽量匹配父设备，复杂 LVM / RAID 和权限不足时可能不可用。
 
 `/etc/systemd/system/servmon.service`：
 
@@ -136,9 +136,13 @@ sudo systemctl enable --now servmon
 
 ## 界面
 
+界面分为三个标签页：“基础信息”展示 CPU、内存、磁盘、网络、每核占用和系统服务；“进程”提供全宽进程列表、搜索、分页与详情；“Docker”展示容器及操作。顶部的主机状态、告警、主题和刷新开关始终可用。
+
+标签页共用一条 SSE 连接，切换保留搜索条件和分页，不重新登录。地址栏的 `#overview`、`#processes`、`#docker` 可直接定位，刷新后仍停留在对应页面。标签聚焦时支持左右方向键以及 Home / End 切换。
+
 时间范围同时影响 CPU 和网络历史图；网卡选择只改变网络数据。默认选择累计流量最大的接口，选择“总流量”可查看聚合。进程名称最多 64 字符，详情展示完整命令行。进程 CPU 百分比允许超过 100%（多个 CPU 核）。
 
-`/` 聚焦进程搜索，`p` 暂停 / 恢复，`t` 切换主题。输入或打开抽屉时不触发快捷键。卡片标题前的拖动手柄可在同组重排，也可聚焦后按 Alt + ← / →；顺序和主题保存在 localStorage。语言按浏览器偏好初始化，右上角可切换中英文。
+`/` 切到进程页并聚焦搜索，`p` 暂停 / 恢复，`t` 切换主题。输入或打开抽屉时不触发快捷键。基础信息页中，卡片标题前的拖动手柄可在同组重排，也可聚焦后按 Alt + ← / →；顺序和主题保存在 localStorage。语言按浏览器偏好初始化，右上角可切换中英文。
 
 PWA 安装要求 HTTPS 或 localhost。离线时保留最后一次数据并明确显示离线；服务器恢复自动重连。`?theme=dark|light|auto` 仍然可用。
 

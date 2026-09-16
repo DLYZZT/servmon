@@ -1,4 +1,4 @@
-const CACHE = "servmon-shell-v1";
+const CACHE = "servmon-shell-v2";
 const ASSETS = [
   "/",
   "/style.css",

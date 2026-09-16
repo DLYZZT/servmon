@@ -50,182 +50,243 @@
         </div>
       </header>
 
-      <div class="toolbar">
-        <label
-          >时间范围
-          <select id="range">
-            <option value="3m">3 分钟</option>
-            <option value="1h">1 小时</option>
-            <option value="24h">24 小时</option>
-            <option value="7d">7 天</option>
-            <option value="30d">30 天</option>
-          </select></label
-        ><span id="historyStatus" class="note"></span
-        ><span id="roleBadge" class="note"></span>
+      <div class="page-nav">
+        <div class="page-tabs" role="tablist" aria-label="监控页面">
+          <button
+            class="page-tab"
+            id="tab-overview"
+            type="button"
+            role="tab"
+            aria-selected="true"
+            aria-controls="overviewPanel"
+            data-tab="overview"
+          >
+            基础信息
+          </button>
+          <button
+            class="page-tab"
+            id="tab-processes"
+            type="button"
+            role="tab"
+            aria-selected="false"
+            aria-controls="processesPanel"
+            tabindex="-1"
+            data-tab="processes"
+          >
+            进程
+          </button>
+          <button
+            class="page-tab"
+            id="tab-docker"
+            type="button"
+            role="tab"
+            aria-selected="false"
+            aria-controls="dockerPanel"
+            tabindex="-1"
+            data-tab="docker"
+          >
+            Docker
+          </button>
+        </div>
+        <span id="roleBadge" class="note"></span>
       </div>
-      <section class="grid g4">
-        <div class="card" id="cpuCard" style="padding-bottom: 10px">
-          <div class="hd">
-            <span class="t">CPU</span><span class="r" id="cpuModel"></span>
-          </div>
-          <div class="big"><b id="cpuV">—</b><span>%</span></div>
-          <div class="plot mini">
-            <div class="yScale">
-              <span>100%</span><span>50%</span><span>0%</span>
-            </div>
-            <svg
-              class="spark"
-              viewBox="0 0 300 70"
-              preserveAspectRatio="none"
-              role="img"
-              aria-label="历史曲线"
-            >
-              <polyline
-                id="cpuLine"
-                class="st-accent"
-                points=""
-                fill="none"
-                stroke-width="1.6"
-                vector-effect="non-scaling-stroke"
-              ></polyline>
-              <polygon
-                id="cpuArea"
-                class="fl-accent"
-                points=""
-                opacity="0.09"
-              ></polygon>
-            </svg>
-          </div>
-          <div class="axis" id="cpuAxis"></div>
+      <section
+        class="tab-panel"
+        id="overviewPanel"
+        role="tabpanel"
+        aria-labelledby="tab-overview"
+        tabindex="0"
+      >
+        <div class="toolbar">
+          <label
+            >时间范围
+            <select id="range">
+              <option value="3m">3 分钟</option>
+              <option value="1h">1 小时</option>
+              <option value="24h">24 小时</option>
+              <option value="7d">7 天</option>
+              <option value="30d">30 天</option>
+            </select></label
+          ><span id="historyStatus" class="note"></span>
         </div>
-
-        <div class="card">
-          <div class="hd">
-            <span class="t" id="memTitle">内存</span
-            ><span class="r" id="memText"></span>
+        <section class="grid g4">
+          <div class="card" id="cpuCard" style="padding-bottom: 10px">
+            <div class="hd">
+              <span class="t">CPU</span><span class="r" id="cpuModel"></span>
+            </div>
+            <div class="big"><b id="cpuV">—</b><span>%</span></div>
+            <div class="plot mini">
+              <div class="yScale">
+                <span>100%</span><span>50%</span><span>0%</span>
+              </div>
+              <svg
+                class="spark"
+                viewBox="0 0 300 70"
+                preserveAspectRatio="none"
+                role="img"
+                aria-label="历史曲线"
+              >
+                <polyline
+                  id="cpuLine"
+                  class="st-accent"
+                  points=""
+                  fill="none"
+                  stroke-width="1.6"
+                  vector-effect="non-scaling-stroke"
+                ></polyline>
+                <polygon
+                  id="cpuArea"
+                  class="fl-accent"
+                  points=""
+                  opacity="0.09"
+                ></polygon>
+              </svg>
+            </div>
+            <div class="axis" id="cpuAxis"></div>
           </div>
-          <div class="big"><b id="memV">—</b><span>%</span></div>
-          <div style="display: flex; flex-direction: column; gap: 9px">
-            <div class="bar"><i id="memBar"></i></div>
-            <div class="meta2">
-              <span id="swapText">Swap —</span
-              ><span id="cacheText">缓存 —</span>
+
+          <div class="card">
+            <div class="hd">
+              <span class="t" id="memTitle">内存</span
+              ><span class="r" id="memText"></span>
+            </div>
+            <div class="big"><b id="memV">—</b><span>%</span></div>
+            <div style="display: flex; flex-direction: column; gap: 9px">
+              <div class="bar"><i id="memBar"></i></div>
+              <div class="meta2">
+                <span id="swapText">Swap —</span
+                ><span id="cacheText">缓存 —</span>
+              </div>
             </div>
           </div>
-        </div>
 
-        <div class="card">
-          <div class="hd">
-            <span class="t" id="diskTitle">磁盘</span
-            ><span class="r" id="diskCount"></span>
+          <div class="card">
+            <div class="hd">
+              <span class="t" id="diskTitle">磁盘</span
+              ><span class="r" id="diskCount"></span>
+            </div>
+            <div class="disks" id="disks"></div>
           </div>
-          <div class="disks" id="disks"></div>
-        </div>
 
-        <div class="card" style="padding-bottom: 10px">
+          <div class="card" style="padding-bottom: 10px">
+            <div class="hd">
+              <span class="t">网络</span
+              ><select id="iface" aria-label="网络接口"></select>
+            </div>
+            <div class="net2">
+              <div class="kv rx">
+                <span class="k">↓ 下行</span><span class="v" id="rxV">—</span>
+              </div>
+              <div class="kv txv">
+                <span class="k">↑ 上行</span><span class="v" id="txV">—</span>
+              </div>
+            </div>
+            <div class="note" id="netTotal">累计 —</div>
+          </div>
+        </section>
+
+        <section class="grid g2">
+          <div class="card lg">
+            <div class="hd">
+              <span class="t">网络流量</span>
+              <div class="legend">
+                <span class="rx">— 下行</span><span class="tx">— 上行</span
+                ><span class="n" id="netRange">近 3 分钟</span>
+              </div>
+            </div>
+            <div class="plot">
+              <div class="yScale" id="netScale"></div>
+              <svg
+                class="chart"
+                viewBox="0 0 600 180"
+                preserveAspectRatio="none"
+                role="img"
+                aria-label="历史曲线"
+              >
+                <line
+                  class="st-grid"
+                  x1="0"
+                  y1="45"
+                  x2="600"
+                  y2="45"
+                  stroke-width="1"
+                  vector-effect="non-scaling-stroke"
+                ></line>
+                <line
+                  class="st-grid"
+                  x1="0"
+                  y1="90"
+                  x2="600"
+                  y2="90"
+                  stroke-width="1"
+                  vector-effect="non-scaling-stroke"
+                ></line>
+                <line
+                  class="st-grid"
+                  x1="0"
+                  y1="135"
+                  x2="600"
+                  y2="135"
+                  stroke-width="1"
+                  vector-effect="non-scaling-stroke"
+                ></line>
+                <polygon
+                  id="rxArea"
+                  class="fl-accent"
+                  points=""
+                  opacity="0.1"
+                ></polygon>
+                <polyline
+                  id="rxLine"
+                  class="st-accent"
+                  points=""
+                  fill="none"
+                  stroke-width="1.8"
+                  vector-effect="non-scaling-stroke"
+                ></polyline>
+                <polyline
+                  id="txLine"
+                  class="st-tx"
+                  points=""
+                  fill="none"
+                  stroke-width="1.5"
+                  vector-effect="non-scaling-stroke"
+                ></polyline>
+              </svg>
+            </div>
+            <div class="axis" id="netAxis"></div>
+            <div class="note" id="chartHint">移动到图上查看数值</div>
+          </div>
+
+          <div class="card lg">
+            <div class="hd">
+              <span class="t">每核占用</span
+              ><span class="r" id="coreCount"></span>
+            </div>
+            <div class="cores" id="cores"></div>
+            <div class="foot">
+              <span id="temp">温度 —</span><span id="freq">频率 —</span
+              ><span id="procCount">进程 —</span>
+            </div>
+          </div>
+        </section>
+
+        <div class="card lg" style="gap: 14px">
           <div class="hd">
-            <span class="t">网络</span
-            ><select id="iface" aria-label="网络接口"></select>
+            <span class="t">系统服务</span><span class="r">systemd</span>
           </div>
-          <div class="net2">
-            <div class="kv rx">
-              <span class="k">↓ 下行</span><span class="v" id="rxV">—</span>
-            </div>
-            <div class="kv txv">
-              <span class="k">↑ 上行</span><span class="v" id="txV">—</span>
-            </div>
-          </div>
-          <div class="note" id="netTotal">累计 —</div>
+          <div class="svcs" id="services"></div>
+          <div class="log" id="log">—</div>
         </div>
       </section>
-
-      <section class="grid g2">
-        <div class="card lg">
-          <div class="hd">
-            <span class="t">网络流量</span>
-            <div class="legend">
-              <span class="rx">— 下行</span><span class="tx">— 上行</span
-              ><span class="n" id="netRange">近 3 分钟</span>
-            </div>
-          </div>
-          <div class="plot">
-            <div class="yScale" id="netScale"></div>
-            <svg
-              class="chart"
-              viewBox="0 0 600 180"
-              preserveAspectRatio="none"
-              role="img"
-              aria-label="历史曲线"
-            >
-              <line
-                class="st-grid"
-                x1="0"
-                y1="45"
-                x2="600"
-                y2="45"
-                stroke-width="1"
-                vector-effect="non-scaling-stroke"
-              ></line>
-              <line
-                class="st-grid"
-                x1="0"
-                y1="90"
-                x2="600"
-                y2="90"
-                stroke-width="1"
-                vector-effect="non-scaling-stroke"
-              ></line>
-              <line
-                class="st-grid"
-                x1="0"
-                y1="135"
-                x2="600"
-                y2="135"
-                stroke-width="1"
-                vector-effect="non-scaling-stroke"
-              ></line>
-              <polygon
-                id="rxArea"
-                class="fl-accent"
-                points=""
-                opacity="0.1"
-              ></polygon>
-              <polyline
-                id="rxLine"
-                class="st-accent"
-                points=""
-                fill="none"
-                stroke-width="1.8"
-                vector-effect="non-scaling-stroke"
-              ></polyline>
-              <polyline
-                id="txLine"
-                class="st-tx"
-                points=""
-                fill="none"
-                stroke-width="1.5"
-                vector-effect="non-scaling-stroke"
-              ></polyline>
-            </svg>
-          </div>
-          <div class="axis" id="netAxis"></div>
-          <div class="note" id="chartHint">移动到图上查看数值</div>
-        </div>
-
-        <div class="card lg">
-          <div class="hd">
-            <span class="t">每核占用</span
-            ><span class="r" id="coreCount"></span>
-          </div>
-          <div class="cores" id="cores"></div>
-          <div class="foot">
-            <span id="temp">温度 —</span><span id="freq">频率 —</span
-            ><span id="procCount">进程 —</span>
-          </div>
-        </div>
-      </section>
-
-      <section class="grid g2b">
+      <section
+        class="tab-panel"
+        id="processesPanel"
+        role="tabpanel"
+        aria-labelledby="tab-processes"
+        tabindex="0"
+        hidden
+      >
         <div class="card lg" style="gap: 14px">
           <div class="hd">
             <span class="t">进程</span>
@@ -255,18 +316,23 @@
             </div>
           </div>
         </div>
-
-        <div class="card lg" style="gap: 14px">
-          <div class="hd">
-            <span class="t">系统服务</span><span class="r">systemd</span>
-          </div>
-          <div class="svcs" id="services"></div>
-          <div class="log" id="log">—</div>
-        </div>
       </section>
-      <section class="card" id="containersPanel" hidden>
-        <div class="hd"><span class="t">Docker 容器</span></div>
-        <div id="containers"></div>
+      <section
+        class="tab-panel"
+        id="dockerPanel"
+        role="tabpanel"
+        aria-labelledby="tab-docker"
+        tabindex="0"
+        hidden
+      >
+        <div class="card docker-empty" id="dockerEmpty" role="status">
+          <h2>Docker 容器</h2>
+          <p id="dockerStatus">正在连接 Docker…</p>
+        </div>
+        <div class="card" id="containersPanel" hidden>
+          <div class="hd"><span class="t">Docker 容器</span></div>
+          <div id="containers"></div>
+        </div>
       </section>
     </div>
     <dialog id="drawer">

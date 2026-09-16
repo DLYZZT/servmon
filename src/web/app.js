@@ -27,6 +27,50 @@ let lastLog = "";
 const pending = new Map(); // 服务名 -> 正在执行的动作
 const cache = { procs: [], svcs: [] };
 
+// ---------- Page tabs (all panels share the same live connection) ----------
+const pageTabs = [...document.querySelectorAll(".page-tab")];
+function showTab(name, { focus = false, updateURL = true } = {}) {
+  const selected =
+    pageTabs.find((tab) => tab.dataset.tab === name) || pageTabs[0];
+  for (const tab of pageTabs) {
+    const active = tab === selected;
+    tab.setAttribute("aria-selected", String(active));
+    tab.tabIndex = active ? 0 : -1;
+    document.getElementById(tab.getAttribute("aria-controls")).hidden = !active;
+  }
+  if (updateURL) history.replaceState(null, "", "#" + selected.dataset.tab);
+  if (focus) selected.focus();
+}
+for (const tab of pageTabs) {
+  tab.addEventListener("click", () => showTab(tab.dataset.tab));
+  tab.addEventListener("keydown", (event) => {
+    if (event.altKey || event.ctrlKey || event.metaKey) return;
+    let index = pageTabs.indexOf(tab);
+    switch (event.key) {
+      case "ArrowRight":
+        index = (index + 1) % pageTabs.length;
+        break;
+      case "ArrowLeft":
+        index = (index + pageTabs.length - 1) % pageTabs.length;
+        break;
+      case "Home":
+        index = 0;
+        break;
+      case "End":
+        index = pageTabs.length - 1;
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+    showTab(pageTabs[index].dataset.tab, { focus: true });
+  });
+}
+window.addEventListener("hashchange", () =>
+  showTab(location.hash.slice(1), { updateURL: false }),
+);
+showTab(location.hash.slice(1), { updateURL: false });
+
 // ---------- 工具 ----------
 function bytes(n, f = 1) {
   const u = ["B", "KB", "MB", "GB", "TB", "PB"];
@@ -939,7 +983,13 @@ $("#drawerContent").addEventListener("click", async (e) => {
 });
 function renderContainers(d) {
   $("#containersPanel").hidden = !d.available;
-  if (!d.available) return;
+  $("#dockerEmpty").hidden = Boolean(d.available);
+  if (!d.available) {
+    $("#dockerStatus").textContent = tr(
+      "Docker 暂不可用，请确认 Docker 已启动且 servmon 有访问权限。",
+    );
+    return;
+  }
   $("#containers").innerHTML =
     (d.containers || [])
       .map(
@@ -973,6 +1023,10 @@ try {
     (navigator.language.startsWith("zh") ? "zh" : "en");
 } catch {}
 const messages = {
+  基础信息: "Overview",
+  "正在连接 Docker…": "Connecting to Docker…",
+  "Docker 暂不可用，请确认 Docker 已启动且 servmon 有访问权限。":
+    "Docker is unavailable. Check that Docker is running and servmon has access.",
   告警: "Alerts",
   退出: "Log out",
   时间范围: "Time range",
@@ -1130,6 +1184,10 @@ function localize(root = document.body) {
     el.placeholder = tr(raw);
   }
   document.documentElement.lang = lang === "en" ? "en" : "zh-CN";
+  $(".page-tabs").setAttribute(
+    "aria-label",
+    lang === "en" ? "Monitoring pages" : "监控页面",
+  );
   $("#language").textContent = lang === "en" ? "中文" : "EN";
 }
 $("#language").addEventListener("click", () => {
@@ -1172,6 +1230,7 @@ document.addEventListener("keydown", (e) => {
     return;
   if (e.key === "/") {
     e.preventDefault();
+    showTab("processes");
     $("#procSearch").focus();
   } else if (e.key.toLowerCase() === "p") $("#live").click();
   else if (e.key.toLowerCase() === "t") $("#theme").click();
