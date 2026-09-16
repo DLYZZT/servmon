@@ -87,6 +87,18 @@
           >
             Docker
           </button>
+          <button
+            class="page-tab"
+            id="tab-services"
+            type="button"
+            role="tab"
+            aria-selected="false"
+            aria-controls="servicesPanel"
+            tabindex="-1"
+            data-tab="services"
+          >
+            系统服务
+          </button>
         </div>
         <span id="roleBadge" class="note"></span>
       </div>
@@ -270,14 +282,6 @@
             </div>
           </div>
         </section>
-
-        <div class="card lg" style="gap: 14px">
-          <div class="hd">
-            <span class="t">系统服务</span><span class="r">systemd</span>
-          </div>
-          <div class="svcs" id="services"></div>
-          <div class="log" id="log">—</div>
-        </div>
       </section>
       <section
         class="tab-panel"
@@ -332,6 +336,22 @@
         <div class="card" id="containersPanel" hidden>
           <div class="hd"><span class="t">Docker 容器</span></div>
           <div id="containers"></div>
+        </div>
+      </section>
+      <section
+        class="tab-panel"
+        id="servicesPanel"
+        role="tabpanel"
+        aria-labelledby="tab-services"
+        tabindex="0"
+        hidden
+      >
+        <div class="card lg" style="gap: 14px">
+          <div class="hd">
+            <span class="t">系统服务</span><span class="r">systemd</span>
+          </div>
+          <div class="svcs" id="services"></div>
+          <div class="log" id="log">—</div>
         </div>
       </section>
     </div>
