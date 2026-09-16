@@ -110,7 +110,7 @@ func (s *Server) backgroundDocker(ctx context.Context) {
 }
 func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 	if _, ok := w.(http.Flusher); !ok {
-		writeJSON(w, 500, map[string]string{"error": "stream unavailable"})
+		writeAPIError(w, 500, "stream_unavailable", "stream unavailable")
 		return
 	}
 	c := s.hub.subscribe()
@@ -164,7 +164,7 @@ func (s *Server) audited(w http.ResponseWriter, r *http.Request, fn func() (any,
 	role, _ := r.Context().Value(roleKey{}).(string)
 	action := r.Method + " " + r.URL.RequestURI()
 	if e := s.security.audit(r, role, action, "requested"); e != nil {
-		writeJSON(w, 503, map[string]string{"error": "审计日志不可写，操作未执行"})
+		writeAPIError(w, 503, "audit_unavailable", "审计日志不可写，操作未执行")
 		return
 	}
 	v, e := fn()
@@ -176,7 +176,7 @@ func (s *Server) audited(w http.ResponseWriter, r *http.Request, fn func() (any,
 		log.Printf("审计结果写入失败: %v", err)
 	}
 	if e != nil {
-		writeJSON(w, 400, map[string]string{"error": e.Error()})
+		writeAPIError(w, 400, errorCode(e, "operation_failed"), e.Error())
 		return
 	}
 	writeJSON(w, 200, v)
@@ -199,12 +199,12 @@ func (s *Server) routes() http.Handler {
 	api.HandleFunc("GET /api/processes/{pid}", func(w http.ResponseWriter, r *http.Request) {
 		pid, e := strconv.ParseInt(r.PathValue("pid"), 10, 32)
 		if e != nil || pid <= 0 {
-			writeJSON(w, 400, map[string]string{"error": "invalid PID"})
+			writeAPIError(w, 400, "invalid_pid", "invalid PID")
 			return
 		}
 		p, e := process.NewProcess(int32(pid))
 		if e != nil {
-			writeJSON(w, 404, map[string]string{"error": "process unavailable"})
+			writeAPIError(w, 404, "process_unavailable", "process unavailable")
 			return
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
@@ -231,29 +231,32 @@ func (s *Server) routes() http.Handler {
 		s.audited(w, r, func() (any, error) {
 			pid, e := strconv.ParseInt(r.PathValue("pid"), 10, 32)
 			if e != nil || pid <= 1 || pid == int64(os.Getpid()) {
-				return nil, fmt.Errorf("拒绝操作受保护 PID")
+				return nil, codedError("protected_pid", "拒绝操作受保护 PID")
 			}
 			sig := r.URL.Query().Get("signal")
 			if sig == "" {
 				sig = "TERM"
 			}
 			if sig != "TERM" && sig != "KILL" {
-				return nil, fmt.Errorf("signal 必须为 TERM 或 KILL")
+				return nil, codedError("invalid_signal", "signal 必须为 TERM 或 KILL")
 			}
 			p, e := process.NewProcess(int32(pid))
 			if e != nil {
-				return nil, e
+				return nil, codedError("process_unavailable", e.Error())
 			}
 			expected, _ := strconv.ParseInt(r.URL.Query().Get("created"), 10, 64)
 			actual, e := p.CreateTime()
 			if e != nil || expected == 0 || expected != actual {
-				return nil, fmt.Errorf("进程已变化，请重新打开详情后操作")
+				return nil, codedError("process_changed", "进程已变化，请重新打开详情后操作")
 			}
 			signal := syscall.SIGTERM
 			if sig == "KILL" {
 				signal = syscall.SIGKILL
 			}
 			e = p.SendSignal(signal)
+			if e != nil {
+				e = codedError("process_control_failed", e.Error())
+			}
 			return map[string]bool{"ok": e == nil}, e
 		})
 	})
@@ -261,7 +264,7 @@ func (s *Server) routes() http.Handler {
 	api.HandleFunc("GET /api/services/{name}/logs", func(w http.ResponseWriter, r *http.Request) {
 		name := r.PathValue("name")
 		if !s.svc.isAllowed(name) {
-			writeJSON(w, 403, map[string]string{"error": "service not allowed"})
+			writeAPIError(w, 403, "service_not_allowed", "service not allowed")
 			return
 		}
 		n := 200
@@ -272,7 +275,7 @@ func (s *Server) routes() http.Handler {
 		defer cancel()
 		out, e := exec.CommandContext(ctx, "journalctl", "-u", name, "-n", strconv.Itoa(n), "--no-pager", "-o", "short-iso").Output()
 		if e != nil {
-			writeJSON(w, 503, map[string]string{"error": "journalctl 不可用或权限不足"})
+			writeAPIError(w, 503, "logs_unavailable", "journalctl 不可用或权限不足")
 			return
 		}
 		writeJSON(w, 200, map[string]string{"logs": string(out)})
@@ -294,12 +297,12 @@ func (s *Server) routes() http.Handler {
 			ran = "3m"
 		}
 		if _, ok := historyRanges[ran]; !ok {
-			writeJSON(w, 400, map[string]string{"error": "invalid range"})
+			writeAPIError(w, 400, "invalid_range", "invalid range")
 			return
 		}
 		key := q.Get("iface")
 		if len(key) > 128 {
-			writeJSON(w, 400, map[string]string{"error": "invalid interface"})
+			writeAPIError(w, 400, "invalid_interface", "invalid interface")
 			return
 		}
 		if key != "" {
@@ -310,7 +313,7 @@ func (s *Server) routes() http.Handler {
 				}
 			}
 			if !found {
-				writeJSON(w, 404, map[string]string{"error": "unknown interface"})
+				writeAPIError(w, 404, "unknown_interface", "unknown interface")
 				return
 			}
 		}

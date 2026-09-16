@@ -1,9 +1,11 @@
-const CACHE = "servmon-shell-v3";
+const CACHE = "servmon-shell-v4";
 const ASSETS = [
   "/",
   "/style.css",
   "/theme.js",
   "/app.js",
+  "/i18n.js",
+  "/layout.js",
   "/icon.svg",
   "/manifest.json",
 ];

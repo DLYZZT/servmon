@@ -115,7 +115,7 @@ func (d *DockerClient) Collect(ctx context.Context) {
 func (d *DockerClient) Snapshot() DockerSnapshot { d.mu.RLock(); defer d.mu.RUnlock(); return d.cached }
 func (d *DockerClient) Control(ctx context.Context, id, action string) error {
 	if action != "start" && action != "stop" && action != "restart" {
-		return fmt.Errorf("unsupported container action")
+		return codedError("unsupported_container_action", "unsupported container action")
 	}
 	known := false
 	for _, c := range d.Snapshot().Containers {
@@ -124,7 +124,10 @@ func (d *DockerClient) Control(ctx context.Context, id, action string) error {
 		}
 	}
 	if !known {
-		return fmt.Errorf("unknown container")
+		return codedError("unknown_container", "unknown container")
 	}
-	return d.request(ctx, "POST", "/containers/"+url.PathEscape(id)+"/"+action+"?t=5", nil)
+	if err := d.request(ctx, "POST", "/containers/"+url.PathEscape(id)+"/"+action+"?t=5", nil); err != nil {
+		return codedError("container_control_failed", err.Error())
+	}
+	return nil
 }

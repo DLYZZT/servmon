@@ -99,7 +99,7 @@ func (s *Security) fail(ip string) {
 func (s *Security) throttle(w http.ResponseWriter, r *http.Request) bool {
 	if n := s.limited(clientIP(r)); n > 0 {
 		w.Header().Set("Retry-After", fmt.Sprint(n))
-		writeJSON(w, 429, map[string]string{"error": "登录尝试过多，请稍后重试"})
+		writeAPIError(w, 429, "rate_limited", "登录尝试过多，请稍后重试")
 		return true
 	}
 	return false
@@ -116,7 +116,7 @@ func sameOrigin(r *http.Request) bool {
 }
 func (s *Security) Login(w http.ResponseWriter, r *http.Request) {
 	if !sameOrigin(r) {
-		writeJSON(w, 403, map[string]string{"error": "invalid origin"})
+		writeAPIError(w, 403, "invalid_origin", "invalid origin")
 		return
 	}
 	if s.throttle(w, r) {
@@ -126,18 +126,18 @@ func (s *Security) Login(w http.ResponseWriter, r *http.Request) {
 		Token string `json:"token"`
 	}
 	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&b) != nil {
-		writeJSON(w, 400, map[string]string{"error": "invalid login"})
+		writeAPIError(w, 400, "invalid_login", "invalid login")
 		return
 	}
 	role := s.tokenRole(b.Token)
 	if role == "" {
 		s.fail(clientIP(r))
-		writeJSON(w, 401, map[string]string{"error": "unauthorized"})
+		writeAPIError(w, 401, "unauthorized", "unauthorized")
 		return
 	}
 	buf := make([]byte, 32)
 	if _, e := rand.Read(buf); e != nil {
-		writeJSON(w, 500, map[string]string{"error": "session unavailable"})
+		writeAPIError(w, 500, "session_unavailable", "session unavailable")
 		return
 	}
 	token := hex.EncodeToString(buf)
@@ -149,7 +149,7 @@ func (s *Security) Login(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(s.sessions) >= 10000 {
 		s.mu.Unlock()
-		writeJSON(w, 503, map[string]string{"error": "too many sessions"})
+		writeAPIError(w, 503, "too_many_sessions", "too many sessions")
 		return
 	}
 	s.sessions[sha256.Sum256([]byte(token))] = session{role, time.Now().Add(24 * time.Hour)}
@@ -197,17 +197,17 @@ func (s *Security) auth(next http.Handler) http.Handler {
 			if r.Header.Get("Authorization") != "" {
 				s.fail(clientIP(r))
 			}
-			writeJSON(w, 401, map[string]string{"error": "unauthorized"})
+			writeAPIError(w, 401, "unauthorized", "unauthorized")
 			return
 		}
 		if r.Method != "GET" && r.Method != "HEAD" {
 			if !sameOrigin(r) {
-				writeJSON(w, 403, map[string]string{"error": "invalid origin"})
+				writeAPIError(w, 403, "invalid_origin", "invalid origin")
 				return
 			}
 			if role != "admin" && r.URL.Path != "/api/logout" {
 				s.audit(r, role, r.URL.Path, "forbidden")
-				writeJSON(w, 403, map[string]string{"error": "只读令牌不能执行此操作"})
+				writeAPIError(w, 403, "read_only", "只读令牌不能执行此操作")
 				return
 			}
 		}

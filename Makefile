@@ -6,7 +6,7 @@ NODE ?= node
 LDFLAGS ?= -s -w
 ARGS ?=
 
-.PHONY: build run test vet check check-js fmt linux linux-amd64 linux-arm64 clean help
+.PHONY: build run test vet check check-js test-web fmt linux linux-amd64 linux-arm64 clean help
 
 build:
 	mkdir -p bin
@@ -21,12 +21,17 @@ test:
 vet:
 	$(GO) vet ./...
 
-check: test vet check-js
+check: test vet check-js test-web
 
 check-js:
 	$(NODE) --check src/web/app.js
+	$(NODE) --check src/web/i18n.js
+	$(NODE) --check src/web/layout.js
 	$(NODE) --check src/web/theme.js
 	$(NODE) --check src/web/sw.js
+
+test-web:
+	$(NODE) --test tests/*.test.cjs
 
 fmt:
 	$(GOFMT) -w src
@@ -51,7 +56,8 @@ help:
 	  'make run ARGS="..." Build and run from the project root' \
 	  'make test          Run Go tests with the race detector' \
 	  'make vet           Run go vet' \
-	  'make check         Run tests, vet and JavaScript syntax checks' \
+	  'make check         Run Go/JS tests, vet and syntax checks' \
+	  'make test-web      Run localization and layout tests' \
 	  'make fmt           Format Go source files' \
 	  'make linux         Build Linux amd64 and arm64 binaries' \
 	  'make linux-amd64   Build only the Linux amd64 binary' \

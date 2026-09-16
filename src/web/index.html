@@ -21,37 +21,50 @@
           <div class="name">
             <span class="pulse"></span>
             <h1 id="host">—</h1>
-            <span class="badge" id="badge">连接中</span>
+            <span class="badge" id="badge" data-i18n="连接中">连接中</span>
           </div>
-          <div class="sys" id="sys">正在连接…</div>
+          <div class="sys" id="sys" data-i18n="正在连接…">正在连接…</div>
         </div>
         <div class="side">
           <div class="kv">
-            <span class="k">负载 1/5/15</span><span class="v" id="load">—</span>
+            <span class="k" data-i18n="负载 1/5/15">负载 1/5/15</span
+            ><span class="v" id="load">—</span>
           </div>
           <div class="kv">
-            <span class="k">本地时间</span><span class="v" id="clock">—</span>
+            <span class="k" data-i18n="本地时间">本地时间</span
+            ><span class="v" id="clock">—</span>
           </div>
           <div class="btns">
             <button class="live" id="alertsButton">
-              告警 <b id="alertCount">0</b>
+              <span data-i18n="告警">告警</span> <b id="alertCount">0</b>
             </button>
             <button class="live" id="language" aria-label="Language">EN</button>
-            <button class="live" id="logout" hidden>退出</button>
+            <button class="live" id="logout" hidden data-i18n="退出">
+              退出
+            </button>
             <button
               class="live"
               id="theme"
               title="切换主题：跟随系统 / 深色 / 浅色"
+              data-i18n-title="切换主题：跟随系统 / 深色 / 浅色"
+              data-i18n="主题 自动"
             >
               主题 自动
             </button>
-            <button class="live" id="live">● 实时刷新</button>
+            <button class="live" id="live" data-i18n="● 实时刷新">
+              ● 实时刷新
+            </button>
           </div>
         </div>
       </header>
 
       <div class="page-nav">
-        <div class="page-tabs" role="tablist" aria-label="监控页面">
+        <div
+          class="page-tabs"
+          role="tablist"
+          aria-label="监控页面"
+          data-i18n-label="监控页面"
+        >
           <button
             class="page-tab"
             id="tab-overview"
@@ -60,6 +73,7 @@
             aria-selected="true"
             aria-controls="overviewPanel"
             data-tab="overview"
+            data-i18n="基础信息"
           >
             基础信息
           </button>
@@ -72,6 +86,7 @@
             aria-controls="processesPanel"
             tabindex="-1"
             data-tab="processes"
+            data-i18n="进程"
           >
             进程
           </button>
@@ -96,33 +111,54 @@
             aria-controls="servicesPanel"
             tabindex="-1"
             data-tab="services"
+            data-i18n="系统服务"
           >
             系统服务
           </button>
         </div>
-        <span id="roleBadge" class="note"></span>
+        <div class="nav-tools">
+          <button
+            type="button"
+            class="live"
+            id="resetLayout"
+            data-i18n="恢复默认布局"
+          >
+            恢复默认布局</button
+          ><span id="roleBadge" class="note"></span>
+        </div>
+      </div>
+      <div class="toolbar" id="historyControls">
+        <label
+          ><span data-i18n="时间范围">时间范围</span>
+          <select id="range">
+            <option value="3m" data-i18n="3 分钟">3 分钟</option>
+            <option value="1h" data-i18n="1 小时">1 小时</option>
+            <option value="24h" data-i18n="24 小时">24 小时</option>
+            <option value="7d" data-i18n="7 天">7 天</option>
+            <option value="30d" data-i18n="30 天">30 天</option>
+          </select></label
+        ><span id="historyStatus" class="note"></span>
       </div>
       <section
         class="tab-panel"
         id="overviewPanel"
+        data-page="overview"
         role="tabpanel"
         aria-labelledby="tab-overview"
         tabindex="0"
       >
-        <div class="toolbar">
-          <label
-            >时间范围
-            <select id="range">
-              <option value="3m">3 分钟</option>
-              <option value="1h">1 小时</option>
-              <option value="24h">24 小时</option>
-              <option value="7d">7 天</option>
-              <option value="30d">30 天</option>
-            </select></label
-          ><span id="historyStatus" class="note"></span>
-        </div>
-        <section class="grid g4">
-          <div class="card" id="cpuCard" style="padding-bottom: 10px">
+        <section
+          class="grid g4 layout-zone"
+          data-zone="summary"
+          data-zone-title="基础信息 · 指标"
+        >
+          <div
+            class="card"
+            data-panel="cpu"
+            data-panel-title="CPU"
+            id="cpuCard"
+            style="padding-bottom: 10px"
+          >
             <div class="hd">
               <span class="t">CPU</span><span class="r" id="cpuModel"></span>
             </div>
@@ -137,6 +173,7 @@
                 preserveAspectRatio="none"
                 role="img"
                 aria-label="历史曲线"
+                data-i18n-label="历史曲线"
               >
                 <polyline
                   id="cpuLine"
@@ -157,9 +194,9 @@
             <div class="axis" id="cpuAxis"></div>
           </div>
 
-          <div class="card">
+          <div class="card" data-panel="memory" data-panel-title="内存">
             <div class="hd">
-              <span class="t" id="memTitle">内存</span
+              <span class="t" id="memTitle" data-i18n="内存">内存</span
               ><span class="r" id="memText"></span>
             </div>
             <div class="big"><b id="memV">—</b><span>%</span></div>
@@ -167,43 +204,61 @@
               <div class="bar"><i id="memBar"></i></div>
               <div class="meta2">
                 <span id="swapText">Swap —</span
-                ><span id="cacheText">缓存 —</span>
+                ><span id="cacheText" data-i18n="缓存 —">缓存 —</span>
               </div>
             </div>
           </div>
 
-          <div class="card">
+          <div class="card" data-panel="disk" data-panel-title="磁盘">
             <div class="hd">
-              <span class="t" id="diskTitle">磁盘</span
+              <span class="t" id="diskTitle" data-i18n="磁盘">磁盘</span
               ><span class="r" id="diskCount"></span>
             </div>
             <div class="disks" id="disks"></div>
           </div>
 
-          <div class="card" style="padding-bottom: 10px">
+          <div
+            class="card"
+            style="padding-bottom: 10px"
+            data-panel="network"
+            data-panel-title="网络"
+          >
             <div class="hd">
-              <span class="t">网络</span
-              ><select id="iface" aria-label="网络接口"></select>
+              <span class="t" data-i18n="网络">网络</span
+              ><select
+                id="iface"
+                aria-label="网络接口"
+                data-i18n-label="网络接口"
+              ></select>
             </div>
             <div class="net2">
               <div class="kv rx">
-                <span class="k">↓ 下行</span><span class="v" id="rxV">—</span>
+                <span class="k" data-i18n="↓ 下行">↓ 下行</span
+                ><span class="v" id="rxV">—</span>
               </div>
               <div class="kv txv">
-                <span class="k">↑ 上行</span><span class="v" id="txV">—</span>
+                <span class="k" data-i18n="↑ 上行">↑ 上行</span
+                ><span class="v" id="txV">—</span>
               </div>
             </div>
-            <div class="note" id="netTotal">累计 —</div>
+            <div class="note" id="netTotal" data-i18n="累计 —">累计 —</div>
           </div>
         </section>
 
-        <section class="grid g2">
-          <div class="card lg">
+        <section
+          class="grid g2 layout-zone"
+          data-zone="charts"
+          data-zone-title="基础信息 · 图表"
+        >
+          <div class="card lg" data-panel="traffic" data-panel-title="网络流量">
             <div class="hd">
-              <span class="t">网络流量</span>
+              <span class="t" data-i18n="网络流量">网络流量</span>
               <div class="legend">
-                <span class="rx">— 下行</span><span class="tx">— 上行</span
-                ><span class="n" id="netRange">近 3 分钟</span>
+                <span class="rx" data-i18n="— 下行">— 下行</span
+                ><span class="tx" data-i18n="— 上行">— 上行</span
+                ><span class="n" id="netRange" data-i18n="近 3 分钟"
+                  >近 3 分钟</span
+                >
               </div>
             </div>
             <div class="plot">
@@ -214,6 +269,7 @@
                 preserveAspectRatio="none"
                 role="img"
                 aria-label="历史曲线"
+                data-i18n-label="历史曲线"
               >
                 <line
                   class="st-grid"
@@ -267,56 +323,94 @@
               </svg>
             </div>
             <div class="axis" id="netAxis"></div>
-            <div class="note" id="chartHint">移动到图上查看数值</div>
+            <div class="note" id="chartHint" data-i18n="移动到图上查看数值">
+              移动到图上查看数值
+            </div>
           </div>
 
-          <div class="card lg">
+          <div class="card lg" data-panel="cores" data-panel-title="每核占用">
             <div class="hd">
-              <span class="t">每核占用</span
+              <span class="t" data-i18n="每核占用">每核占用</span
               ><span class="r" id="coreCount"></span>
             </div>
             <div class="cores" id="cores"></div>
             <div class="foot">
-              <span id="temp">温度 —</span><span id="freq">频率 —</span
-              ><span id="procCount">进程 —</span>
+              <span id="temp" data-i18n="温度 —">温度 —</span
+              ><span id="freq" data-i18n="频率 —">频率 —</span
+              ><span id="procCount" data-i18n="进程 —">进程 —</span>
             </div>
           </div>
         </section>
+        <div
+          class="layout-zone grid g2 extra-zone"
+          data-zone="overview-extra"
+          data-zone-title="基础信息 · 其它面板"
+        ></div>
       </section>
       <section
         class="tab-panel"
         id="processesPanel"
+        data-page="processes"
         role="tabpanel"
         aria-labelledby="tab-processes"
         tabindex="0"
         hidden
       >
-        <div class="card lg" style="gap: 14px">
-          <div class="hd">
-            <span class="t">进程</span>
-            <div class="segs">
-              <button class="seg on" data-sort="cpu">按 CPU</button>
-              <button class="seg" data-sort="mem">按内存</button>
+        <div class="layout-zone" data-zone="processes" data-zone-title="进程">
+          <div
+            class="card lg"
+            style="gap: 14px"
+            data-panel="processes"
+            data-panel-title="进程"
+            data-wide="true"
+          >
+            <div class="hd">
+              <span class="t" data-i18n="进程">进程</span>
+              <div class="segs">
+                <button class="seg on" data-sort="cpu" data-i18n="按 CPU">
+                  按 CPU
+                </button>
+                <button class="seg" data-sort="mem" data-i18n="按内存">
+                  按内存
+                </button>
+              </div>
             </div>
-          </div>
-          <input
-            id="procSearch"
-            type="search"
-            placeholder="搜索名称 / 用户 / PID"
-            aria-label="搜索进程"
-          />
-          <div class="prow phead">
-            <span>PID</span><span>命令</span><span class="us">用户</span
-            ><span style="text-align: right">CPU</span
-            ><span style="text-align: right">内存</span>
-          </div>
-          <div class="plist" id="procs"></div>
-          <div class="pager" id="pager" hidden>
-            <span class="info" id="pageInfo"></span>
-            <div class="segs">
-              <button class="seg" id="pagePrev" aria-label="上一页">‹</button>
-              <span class="pageNo" id="pageNo"></span>
-              <button class="seg" id="pageNext" aria-label="下一页">›</button>
+            <input
+              id="procSearch"
+              type="search"
+              placeholder="搜索名称 / 用户 / PID"
+              data-i18n-placeholder="搜索名称 / 用户 / PID"
+              aria-label="搜索进程"
+              data-i18n-label="搜索进程"
+            />
+            <div class="prow phead">
+              <span>PID</span><span data-i18n="命令">命令</span
+              ><span class="us" data-i18n="用户">用户</span
+              ><span style="text-align: right">CPU</span
+              ><span style="text-align: right" data-i18n="内存">内存</span>
+            </div>
+            <div class="plist" id="procs"></div>
+            <div class="pager" id="pager" hidden>
+              <span class="info" id="pageInfo"></span>
+              <div class="segs">
+                <button
+                  class="seg"
+                  id="pagePrev"
+                  aria-label="上一页"
+                  data-i18n-label="上一页"
+                >
+                  ‹
+                </button>
+                <span class="pageNo" id="pageNo"></span>
+                <button
+                  class="seg"
+                  id="pageNext"
+                  aria-label="下一页"
+                  data-i18n-label="下一页"
+                >
+                  ›
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -324,41 +418,67 @@
       <section
         class="tab-panel"
         id="dockerPanel"
+        data-page="docker"
         role="tabpanel"
         aria-labelledby="tab-docker"
         tabindex="0"
         hidden
       >
-        <div class="card docker-empty" id="dockerEmpty" role="status">
-          <h2>Docker 容器</h2>
-          <p id="dockerStatus">正在连接 Docker…</p>
-        </div>
-        <div class="card" id="containersPanel" hidden>
-          <div class="hd"><span class="t">Docker 容器</span></div>
-          <div id="containers"></div>
+        <div class="layout-zone" data-zone="docker" data-zone-title="Docker">
+          <div
+            class="card"
+            id="containersPanel"
+            data-panel="containers"
+            data-panel-title="Docker 容器"
+            data-wide="true"
+          >
+            <div class="hd">
+              <span class="t" data-i18n="Docker 容器">Docker 容器</span>
+            </div>
+            <div class="docker-empty" id="dockerEmpty" role="status">
+              <p id="dockerStatus" data-i18n="正在连接 Docker…">
+                正在连接 Docker…
+              </p>
+            </div>
+            <div id="containers" hidden></div>
+          </div>
         </div>
       </section>
       <section
         class="tab-panel"
         id="servicesPanel"
+        data-page="services"
         role="tabpanel"
         aria-labelledby="tab-services"
         tabindex="0"
         hidden
       >
-        <div class="card lg" style="gap: 14px">
-          <div class="hd">
-            <span class="t">系统服务</span><span class="r">systemd</span>
+        <div
+          class="layout-zone"
+          data-zone="services"
+          data-zone-title="系统服务"
+        >
+          <div
+            class="card lg"
+            style="gap: 14px"
+            data-panel="services"
+            data-panel-title="系统服务"
+            data-wide="true"
+          >
+            <div class="hd">
+              <span class="t" data-i18n="系统服务">系统服务</span
+              ><span class="r">systemd</span>
+            </div>
+            <div class="svcs" id="services"></div>
+            <div class="log" id="log">—</div>
           </div>
-          <div class="svcs" id="services"></div>
-          <div class="log" id="log">—</div>
         </div>
       </section>
     </div>
     <dialog id="drawer">
       <div class="drawerHead">
         <h2 id="drawerTitle"></h2>
-        <button class="live" id="closeDrawer">关闭</button>
+        <button class="live" id="closeDrawer" data-i18n="关闭">关闭</button>
       </div>
       <div id="drawerContent"></div>
     </dialog>
@@ -366,19 +486,35 @@
     <div class="toast" id="toast" role="status"></div>
     <div class="login" id="login">
       <form id="loginForm">
-        <div class="t">servmon</div>
-        <p>需要访问令牌才能查看此面板。</p>
+        <div class="login-heading">
+          <div class="t">servmon</div>
+          <button
+            type="button"
+            id="loginLanguage"
+            aria-label="切换语言"
+            data-i18n-label="切换语言"
+          >
+            EN
+          </button>
+        </div>
+        <p data-i18n="需要访问令牌才能查看此面板。">
+          需要访问令牌才能查看此面板。
+        </p>
         <input
           id="tokenIn"
           aria-label="访问令牌"
+          data-i18n-label="访问令牌"
           type="password"
           placeholder="输入令牌"
+          data-i18n-placeholder="输入令牌"
           autocomplete="current-password"
         />
-        <button type="submit">进入</button>
+        <button type="submit" data-i18n="进入">进入</button>
       </form>
     </div>
 
+    <script src="/i18n.js"></script>
+    <script src="/layout.js"></script>
     <script src="/app.js"></script>
   </body>
 </html>

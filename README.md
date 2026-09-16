@@ -14,12 +14,12 @@
 
 ```bash
 make               # 本机二进制：bin/servmon
-make check         # Go 竞态测试、go vet、JavaScript 语法检查
+make check         # Go 竞态测试、go vet、JavaScript 语法与功能测试
 make linux         # bin/servmon-linux-amd64 和 bin/servmon-linux-arm64
 make help          # 查看全部目标
 ```
 
-在项目根目录执行。构建只需要 Go；`make check` 的前端语法检查还需要 Node.js，`make test` 的竞态检测需要可用的 CGO / C 编译器。服务器运行二进制不需要这些开发工具。
+在项目根目录执行。构建只需要 Go；`make check` 的前端检查还需要 Node.js（使用内置测试工具，无需安装 npm 依赖），`make test` 的竞态检测需要可用的 CGO / C 编译器。服务器运行二进制不需要这些开发工具。`make test-web` 可单独运行国际化和布局测试。
 
 `make run ARGS='-addr 127.0.0.1:8080 -data-dir ./data'` 可直接构建并启动；`make fmt` 格式化 Go 文件，`make clean` 仅删除 `bin/` 中的三个构建产物。可通过 `GO`、`GOFMT`、`NODE` 和 `LDFLAGS` 覆盖工具或构建选项。
 
@@ -35,6 +35,7 @@ servmon/
 │   ├── *_test.go          # 后端测试
 │   └── web/               # 内嵌 HTML / CSS / JavaScript / PWA 资源
 ├── scripts/               # 性能对比等开发脚本
+├── tests/                 # 国际化与布局的前端测试
 ├── test-results/          # 已保存的测试结果
 ├── bin/                   # 构建产物，不提交 Git
 ├── Makefile               # 统一构建、测试与运行入口
@@ -116,6 +117,8 @@ sudo systemctl enable --now servmon
 
 脚本可继续使用 `Authorization: Bearer <token>`，只读令牌同样适用。
 
+错误响应保留原有 `error` 文本，并增加稳定的 `code`（如 `read_only`、`logs_unavailable`、`protected_pid`）。网页按错误码显示当前语言的提示；原始错误仍保留在 API 响应和审计中，便于排障。
+
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | POST | `/api/login` | JSON `{"token":"..."}`，建立会话 |
@@ -142,7 +145,13 @@ sudo systemctl enable --now servmon
 
 时间范围同时影响 CPU 和网络历史图；网卡选择只改变网络数据。默认选择累计流量最大的接口，选择“总流量”可查看聚合。进程名称最多 64 字符，详情展示完整命令行。进程 CPU 百分比允许超过 100%（多个 CPU 核）。
 
-`/` 切到进程页并聚焦搜索，`p` 暂停 / 恢复，`t` 切换主题。输入或打开抽屉时不触发快捷键。基础信息页中，卡片标题前的拖动手柄可在同组重排，也可聚焦后按 Alt + ← / →；顺序和主题保存在 localStorage。语言按浏览器偏好初始化，右上角可切换中英文。
+`/` 打开进程面板所在的标签页并聚焦搜索，`p` 暂停 / 恢复，`t` 切换主题。输入或打开对话框时不触发快捷键。
+
+九个面板均可通过标题前的手柄拖动，同组排序、跨组移动和跨标签页移动都支持。拖到标签按钮上即可放入该页；悬停标签会切页，继续拖动可选择具体位置。拖动时靠近屏幕边缘自动滚动，按 Esc 可取消。各面板的 `⋯` 按钮打开“移动到…”对话框，可直接选择目标组 / 页面及最前或最后位置；键盘聚焦手柄后按 Alt + 方向键可在当前组重排。进程、容器和服务面板始终占满一行，避免移入指标组后内容拥挤。
+
+布局保存在 localStorage，刷新后恢复；旧版基础信息页的排序会迁移，损坏或重复的布局数据会自动修复。“恢复默认布局”在确认后恢复四个标签页的初始面板分布。空标签页会提示如何移入面板，历史范围控件跟随含 CPU 或网络曲线的页面显示。
+
+语言按浏览器偏好初始化，登录页和顶部均可切换中英文，无需刷新；切换保留搜索、排序、分页、暂停状态和自定义布局。`src/web/i18n.js` 集中管理静态文案、动态模板、单复数、提示、无障碍标签及 API 错误文案。确认操作使用页内对话框，按钮也跟随语言。主机名、服务名、镜像名、命令行及原始日志保持原文。
 
 PWA 安装要求 HTTPS 或 localhost。离线时保留最后一次数据并明确显示离线；服务器恢复自动重连。`?theme=dark|light|auto` 仍然可用。
 

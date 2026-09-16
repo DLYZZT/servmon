@@ -439,18 +439,18 @@ func (m *ServiceManager) List(ctx context.Context) []ServiceInfo {
 
 func (m *ServiceManager) Control(ctx context.Context, name, action string) error {
 	if !m.isAllowed(name) {
-		return fmt.Errorf("服务 %q 不在允许列表中", name)
+		return codedError("service_not_allowed", fmt.Sprintf("服务 %q 不在允许列表中", name))
 	}
 	switch action {
 	case "start", "stop", "restart", "enable", "disable":
 	default:
-		return fmt.Errorf("不支持的操作 %q", action)
+		return codedError("unsupported_service_action", fmt.Sprintf("不支持的操作 %q", action))
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	out, err := exec.CommandContext(ctx, "systemctl", action, name).CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("systemctl %s %s: %s", action, name, strings.TrimSpace(string(out)))
+		return codedError("service_control_failed", fmt.Sprintf("systemctl %s %s: %s", action, name, strings.TrimSpace(string(out))))
 	}
 	return nil
 }

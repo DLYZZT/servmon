@@ -1,5 +1,7 @@
 "use strict";
 const $ = (s) => document.querySelector(s);
+const tr = I18n.t;
+I18n.apply();
 try {
   localStorage.removeItem("servmon.token");
 } catch {}
@@ -23,7 +25,10 @@ let live = true;
 let intervalMs = 2000;
 let tickTimer = null;
 let inFlight = false;
-let lastLog = "";
+let lastLog = null;
+let online = null,
+  persistent = true;
+let containerData = null;
 const pending = new Map(); // 服务名 -> 正在执行的动作
 const cache = { procs: [], svcs: [] };
 
@@ -40,6 +45,7 @@ function showTab(name, { focus = false, updateURL = true } = {}) {
   }
   if (updateURL) history.replaceState(null, "", "#" + selected.dataset.tab);
   if (focus) selected.focus();
+  syncHistoryControls();
 }
 for (const tab of pageTabs) {
   tab.addEventListener("click", () => showTab(tab.dataset.tab));
@@ -71,6 +77,15 @@ window.addEventListener("hashchange", () =>
 );
 showTab(location.hash.slice(1), { updateURL: false });
 
+function showPanel(id) {
+  const panel = document.querySelector(`[data-panel="${id}"]`);
+  if (panel) showTab(panel.closest(".tab-panel").dataset.page);
+}
+function syncHistoryControls() {
+  $("#historyControls").hidden = !document.querySelector(
+    '.tab-panel:not([hidden]) [data-panel="cpu"], .tab-panel:not([hidden]) [data-panel="traffic"]',
+  );
+}
 // ---------- 工具 ----------
 function bytes(n, f = 1) {
   const u = ["B", "KB", "MB", "GB", "TB", "PB"];
@@ -88,15 +103,25 @@ function dur(s) {
   const d = Math.floor(s / 86400),
     h = Math.floor((s % 86400) / 3600),
     m = Math.floor((s % 3600) / 60);
-  return (d ? d + " 天 " : "") + (h ? h + " 小时 " : "") + m + " 分";
+  return [
+    d ? tr("{count} 天", { count: d }) : "",
+    h ? tr("{count} 小时", { count: h }) : "",
+    tr("{count} 分", { count: m }),
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 function durShort(s) {
   s = Math.max(0, Math.floor(s));
-  if (s < 60) return "刚刚";
+  if (s < 60) return tr("刚刚");
   const d = Math.floor(s / 86400),
     h = Math.floor((s % 86400) / 3600),
     m = Math.floor((s % 3600) / 60);
-  return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`;
+  return d
+    ? tr("{days}天 {hours}小时", { days: d, hours: h })
+    : h
+      ? tr("{hours}小时 {minutes}分", { hours: h, minutes: m })
+      : tr("{count}分", { count: m });
 }
 const esc = (s) =>
   String(s ?? "").replace(
@@ -122,8 +147,9 @@ function setLog(msg) {
   renderLog();
 }
 function setOnline(ok) {
+  online = ok;
   $("#top").classList.toggle("off", !ok);
-  $("#badge").textContent = ok ? "online" : tr("已离线 · 显示最后一次数据");
+  $("#badge").textContent = ok ? tr("在线") : tr("已离线 · 显示最后一次数据");
 }
 
 // 把序列映射成 SVG 折线的 points 字符串；n 为满幅点数，数据不足时靠右对齐
@@ -147,28 +173,105 @@ function area(points, vals, w, h, n) {
   return `${x0},${h} ${points} ${w},${h}`;
 }
 
+function confirmAction(message) {
+  let dialog = $("#confirmDialog");
+  if (!dialog) {
+    dialog = document.createElement("dialog");
+    dialog.id = "confirmDialog";
+    dialog.setAttribute("aria-labelledby", "confirmTitle");
+    dialog.setAttribute("aria-describedby", "confirmMessage");
+    document.body.appendChild(dialog);
+  }
+  if (dialog.open) return Promise.resolve(false);
+  dialog.innerHTML = `<form method="dialog"><h2 id="confirmTitle" data-i18n="确认操作"></h2><p id="confirmMessage"></p><div class="dialog-actions"><button class="live" value="cancel" autofocus data-i18n="取消"></button><button class="live danger" value="confirm" data-i18n="确认"></button></div></form>`;
+  dialog.querySelector("#confirmMessage").textContent = message;
+  I18n.apply(dialog);
+  dialog.returnValue = "";
+  return new Promise((resolve) => {
+    dialog.addEventListener(
+      "close",
+      () => resolve(dialog.returnValue === "confirm"),
+      { once: true },
+    );
+    dialog.showModal();
+  });
+}
+class APIError extends Error {
+  constructor(code, status = 0, details = "", seconds = 60) {
+    super();
+    this.code = code;
+    this.status = status;
+    this.details = details;
+    this.seconds = seconds;
+  }
+  get message() {
+    return I18n.error(this.code, this.status, this.seconds);
+  }
+}
 async function api(path, opts = {}) {
-  const h = Object.assign({}, opts.headers || {});
-
-  const r = await fetch(
-    path,
-    Object.assign({}, opts, {
-      headers: h,
+  let r;
+  try {
+    r = await fetch(path, {
+      ...opts,
       signal: opts.signal || AbortSignal.timeout(12000),
-    }),
-  );
+    });
+  } catch (e) {
+    throw new APIError(
+      e.name === "TimeoutError" || e.name === "AbortError"
+        ? "timeout"
+        : "network",
+    );
+  }
   if (r.status === 401) {
     try {
       sessionStorage.removeItem("servmon.last");
     } catch {}
     showLogin();
-    throw new Error("unauthorized");
+    throw new APIError("unauthorized", 401);
   }
-  const data = await r.json();
-  if (!r.ok) throw new Error(data.error || r.statusText);
+  let data;
+  try {
+    data = await r.json();
+  } catch {
+    throw new APIError("invalid_response", r.status);
+  }
+  if (!r.ok)
+    throw new APIError(
+      data.code,
+      r.status,
+      data.error,
+      Number(r.headers.get("Retry-After")) || 60,
+    );
   return data;
 }
-
+function stateLabel(value) {
+  const names = {
+    running: "运行中",
+    active: "运行中",
+    sleep: "休眠",
+    sleeping: "休眠",
+    idle: "就绪",
+    stopped: "已停止",
+    inactive: "已停止",
+    failed: "失败",
+    unknown: "未知",
+    created: "已创建",
+    restarting: "重启中",
+    paused: "已暂停",
+    exited: "已退出",
+    removing: "删除中",
+    dead: "已死亡",
+    zombie: "僵尸进程",
+    enabled: "已启用",
+    disabled: "已禁用",
+    static: "静态",
+    masked: "已屏蔽",
+    indirect: "间接启用",
+    generated: "已生成",
+    transient: "临时",
+  };
+  return Object.hasOwn(names, value) ? tr(names[value]) : value;
+}
 // ---------- 渲染 ----------
 function renderOverview(o) {
   const c = o.current || {};
@@ -186,8 +289,9 @@ function renderOverview(o) {
       historyData.push(sample);
       historyData.sort((a, b) => a.t - b.t);
       if (historyFetched)
-        $("#historyStatus").textContent =
-          `${historyData.length} ${tr("个采样点")}`;
+        $("#historyStatus").textContent = tr("{count} 个采样点", {
+          count: historyData.length,
+        });
     }
   }
   const hist = range === "3m" && !selectedIface ? o.history || [] : historyData;
@@ -198,8 +302,8 @@ function renderOverview(o) {
   $("#host").textContent = o.host || "—";
   $("#sys").textContent = [
     o.os,
-    o.kernel ? "内核 " + o.kernel : "",
-    "运行 " + dur(o.uptime),
+    o.kernel ? tr("内核 {version}", { version: o.kernel }) : "",
+    tr("运行 {duration}", { duration: dur(o.uptime) }),
   ]
     .filter(Boolean)
     .join(" · ");
@@ -211,7 +315,8 @@ function renderOverview(o) {
   const cpuV = $("#cpuV");
   cpuV.textContent = (c.cpu || 0).toFixed(1);
   setHeat(cpuV, c.cpu || 0, "heat");
-  $("#cpuModel").textContent = o.cpuModel || o.cores + " 核";
+  $("#cpuModel").textContent =
+    o.cpuModel || tr("{count} 核", { count: o.cores });
   $("#cpuModel").title = o.cpuModel || "";
   const cpuPts = poly(
     hist.map((s) => s.cpu),
@@ -234,12 +339,12 @@ function renderOverview(o) {
   setHeat(memBar, memPct, "bg");
   $("#swapText").textContent = o.swapTotal
     ? `Swap ${bytes(o.swapUsed)} / ${bytes(o.swapTotal, 0)}`
-    : "Swap 无";
-  $("#cacheText").textContent = "缓存 " + bytes(o.memCached);
+    : tr("Swap 无");
+  $("#cacheText").textContent = tr("缓存 {size}", { size: bytes(o.memCached) });
 
   // 磁盘
   const disks = o.disks || [];
-  $("#diskCount").textContent = disks.length + " 个挂载点";
+  $("#diskCount").textContent = tr("{count} 个挂载点", { count: disks.length });
   $("#disks").innerHTML =
     disks
       .map(
@@ -250,7 +355,7 @@ function renderOverview(o) {
       <div class="note">R ${rate(d.read || 0)} · W ${rate(d.write || 0)}</div>
     </div>`,
       )
-      .join("") || '<div class="empty">没有找到磁盘</div>';
+      .join("") || `<div class="empty">${tr("没有找到磁盘")}</div>`;
 
   // 网络
   const interfaces = o.interfaces || [];
@@ -283,8 +388,10 @@ function renderOverview(o) {
   };
   $("#rxV").textContent = rate(net.rx || 0);
   $("#txV").textContent = rate(net.tx || 0);
-  $("#netTotal").textContent =
-    `累计 ${bytes(net.rxTotal)} ↓ · ${bytes(net.txTotal)} ↑`;
+  $("#netTotal").textContent = tr("累计 {rx} ↓ · {tx} ↑", {
+    rx: bytes(net.rxTotal),
+    tx: bytes(net.txTotal),
+  });
   const rxs = hist.map((s) => s.rx),
     txs = hist.map((s) => s.tx);
   const peak = Math.max(1, ...rxs, ...txs);
@@ -326,13 +433,20 @@ function renderOverview(o) {
   });
   $("#coreCount").textContent =
     o.physical && o.physical !== o.cores
-      ? `${o.physical} 物理核 / ${o.cores} 线程`
-      : `${o.cores} 核`;
-  $("#temp").textContent =
-    "温度 " + (o.temp > 0 ? o.temp.toFixed(0) + "°C" : "—");
-  $("#freq").textContent =
-    "频率 " + (o.cpuMhz > 100 ? (o.cpuMhz / 1000).toFixed(2) + " GHz" : "—");
-  $("#procCount").textContent = "进程 " + (o.procCount || "—");
+      ? tr("{physical} 物理核 / {cores} 线程", {
+          physical: o.physical,
+          cores: o.cores,
+        })
+      : tr("{count} 核", { count: o.cores });
+  $("#temp").textContent = tr("温度 {value}", {
+    value: o.temp > 0 ? o.temp.toFixed(0) + "°C" : "—",
+  });
+  $("#freq").textContent = tr("频率 {value}", {
+    value: o.cpuMhz > 100 ? (o.cpuMhz / 1000).toFixed(2) + " GHz" : "—",
+  });
+  $("#procCount").textContent = tr("进程 {count}", {
+    count: o.procCount || "—",
+  });
 }
 
 function renderProcs(list) {
@@ -351,7 +465,11 @@ function renderProcs(list) {
     slice = list.slice(from, from + PAGE_SIZE);
   $("#pager").hidden = list.length <= PAGE_SIZE;
   $("#pageInfo").textContent = list.length
-    ? `${from + 1}–${from + slice.length} / 共 ${list.length} 个`
+    ? tr("{from}–{to} / 共 {count} 个", {
+        from: from + 1,
+        to: from + slice.length,
+        count: list.length,
+      })
     : "";
   $("#pageNo").textContent = `${page + 1} / ${pages}`;
   $("#pagePrev").disabled = page === 0;
@@ -361,7 +479,7 @@ function renderProcs(list) {
       .map(
         (
           p,
-        ) => `<div class="prow" data-pid="${p.pid}" role="button" tabindex="0" title="${esc(p.name)} · RSS ${bytes(p.rss)} · ${esc(p.status)}">
+        ) => `<div class="prow" data-pid="${p.pid}" role="button" tabindex="0" title="${esc(p.name)} · RSS ${bytes(p.rss)} · ${esc(stateLabel(p.status))}">
     <span class="pid">${p.pid}</span>
     <span class="nm">${esc(p.name)}</span>
     <span class="us">${esc(p.user)}</span>
@@ -369,7 +487,7 @@ function renderProcs(list) {
     <span class="mm">${p.memPct.toFixed(1)}%</span>
   </div>`,
       )
-      .join("") || '<div class="empty">没有进程数据</div>';
+      .join("") || `<div class="empty">${tr("没有进程数据")}</div>`;
 }
 
 const ENABLED = new Set([
@@ -392,8 +510,7 @@ function renderServices(list) {
   cache.svcs = list;
   const el = $("#services");
   if (!list.length) {
-    el.innerHTML =
-      '<div class="empty">启动时用 <code>-services nginx,docker</code> 指定要管理的服务。</div>';
+    el.innerHTML = `<div class="empty">${tr("未配置系统服务。请在配置文件的 services 中添加服务名称。")}</div>`;
     renderLog();
     return;
   }
@@ -422,12 +539,12 @@ function renderServices(list) {
         locked = LOCKED.has(s.enabled);
       const meta = up
         ? s.since
-          ? "已运行 " + durShort(s.since)
+          ? tr("已运行 {duration}", { duration: durShort(s.since) })
           : "运行中"
         : failed
           ? s.sub || "failed"
           : s.since
-            ? "停止 " + durShort(s.since)
+            ? tr("已停止 {duration}", { duration: durShort(s.since) })
             : "未激活";
       return `<div class="svc ${cls}" data-name="${esc(s.name)}">
       <div class="row1">
@@ -435,18 +552,18 @@ function renderServices(list) {
           <div class="unit"><span class="dot"></span><b title="${esc(s.active)} / ${esc(s.sub)}">${esc(s.name)}</b></div>
           <span class="desc" title="${esc(s.description)}">${esc(s.description || s.sub || "")}</span>
         </div>
-        <span class="pill">${pill}</span>
+        <span class="pill">${tr(pill)}</span>
       </div>
       <div class="acts"><button data-logs="${esc(s.name)}">${tr("日志")}</button>
       ${
         role === "admin"
           ? `
-        <button class="pri ${up ? "stop" : "start"}" data-act="${up ? "stop" : "start"}" ${act ? "disabled" : ""}>${act ? "…" : up ? "停止" : "启动"}</button>
-        <button data-act="restart" ${act ? "disabled" : ""}>重启</button>
-        <button class="boot ${on ? "on" : ""}" data-act="${on ? "disable" : "enable"}" ${act || locked ? "disabled" : ""} title="${esc(s.enabled || "")}">自启 ${locked ? esc(s.enabled) : on ? "开" : "关"}</button>
+        <button class="pri ${up ? "stop" : "start"}" data-act="${up ? "stop" : "start"}" ${act ? "disabled" : ""}>${act ? "…" : tr(up ? "停止" : "启动")}</button>
+        <button data-act="restart" ${act ? "disabled" : ""}>${tr("重启")}</button>
+        <button class="boot ${on ? "on" : ""}" data-act="${on ? "disable" : "enable"}" ${act || locked ? "disabled" : ""} title="${esc(s.enabled || "")}">${tr("自启 {state}", { state: locked ? esc(stateLabel(s.enabled)) : tr(on ? "开" : "关") })}</button>
         `
           : ""
-      }<span class="meta">${esc(meta)}</span>
+      }<span class="meta">${esc(tr(meta))}</span>
       </div>
     </div>`;
     })
@@ -457,8 +574,24 @@ function renderServices(list) {
 function renderLog() {
   const list = cache.svcs;
   const running = list.filter((s) => s.active === "active").length;
-  const head = list.length ? `${running}/${list.length} 个服务运行中` : "";
-  $("#log").textContent = [head, lastLog].filter(Boolean).join(" · ") || "—";
+  const head = list.length
+    ? tr("{running}/{total} 个服务运行中", { running, total: list.length })
+    : "";
+  const activity = lastLog
+    ? tr(
+        lastLog.state === "pending"
+          ? "{name}：{action}中…"
+          : lastLog.state === "done"
+            ? "{name}：{action}完成"
+            : "{name}：{action}失败，{error}",
+        {
+          name: lastLog.name,
+          action: tr(VERB[lastLog.action]),
+          error: lastLog.error?.message,
+        },
+      )
+    : "";
+  $("#log").textContent = [head, activity].filter(Boolean).join(" · ") || "—";
 }
 
 // ---------- SSE with polling fallback ----------
@@ -481,7 +614,7 @@ async function tick() {
     renderContainers(d);
     setOnline(true);
   } catch (e) {
-    if (e.message !== "unauthorized") setOnline(false);
+    if (e.code !== "unauthorized") setOnline(false);
   } finally {
     inFlight = false;
   }
@@ -556,7 +689,7 @@ function stop() {
 }
 
 function renderClock() {
-  $("#clock").textContent = new Date().toLocaleTimeString("zh-CN", {
+  $("#clock").textContent = new Date().toLocaleTimeString(I18n.locale(), {
     hour12: false,
   });
 }
@@ -566,7 +699,7 @@ renderClock();
 // ---------- 交互 ----------
 $("#live").addEventListener("click", () => {
   live = !live;
-  $("#live").textContent = live ? "● 实时刷新" : "○ 已暂停";
+  $("#live").textContent = tr(live ? "● 实时刷新" : "○ 已暂停");
   live ? start() : stop();
 });
 
@@ -606,7 +739,7 @@ function applyTheme(pref) {
   root.dataset.theme = resolved;
   root.dataset.themePref = pref;
   root.style.colorScheme = resolved;
-  $("#theme").textContent = THEME_LABEL[pref];
+  $("#theme").textContent = tr(THEME_LABEL[pref]);
   try {
     pref === "auto"
       ? localStorage.removeItem("servmon.theme")
@@ -627,8 +760,9 @@ matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => {
   if ((document.documentElement.dataset.themePref || "auto") === "auto")
     applyTheme("auto");
 });
-$("#theme").textContent =
-  THEME_LABEL[document.documentElement.dataset.themePref || "auto"];
+$("#theme").textContent = tr(
+  THEME_LABEL[document.documentElement.dataset.themePref || "auto"],
+);
 
 const VERB = {
   start: "启动",
@@ -647,23 +781,29 @@ $("#services").addEventListener("click", async (e) => {
   if (!btn || btn.disabled) return;
   const name = btn.closest(".svc").dataset.name,
     act = btn.dataset.act;
-  if (act === "stop" && !confirm("确定停止 " + name + "？")) return;
+  if (
+    act === "stop" &&
+    !(await confirmAction(
+      tr("确定{action}服务“{name}”？", { action: tr(VERB[act]), name }),
+    ))
+  )
+    return;
   pending.set(name, act);
   renderServices(cache.svcs);
-  setLog(`systemctl ${act} ${name} …`);
+  setLog({ action: act, name, state: "pending" });
   try {
     const info = await api(`/api/services/${encodeURIComponent(name)}/${act}`, {
       method: "POST",
     });
-    setLog(`systemctl ${act} ${name} — 完成`);
-    toast(`${name} 已${VERB[act]}`);
+    setLog({ action: act, name, state: "done" });
+    toast(tr("{name}：{action}完成", { name, action: tr(VERB[act]) }));
     pending.delete(name);
     cache.svcs = cache.svcs.map((s) => (s.name === name ? info : s));
     renderServices(cache.svcs);
   } catch (err) {
     pending.delete(name);
-    setLog(`systemctl ${act} ${name} — 失败：${err.message}`);
-    toast("操作失败：" + err.message, true, 5000);
+    setLog({ action: act, name, state: "failed", error: err });
+    toast(tr("操作失败：{error}", { error: err.message }), true, 5000);
     renderServices(cache.svcs);
   }
   tick();
@@ -677,7 +817,7 @@ function showLogin() {
 }
 $("#loginForm").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const button = e.target.querySelector("button");
+  const button = e.target.querySelector('button[type="submit"]');
   button.disabled = true;
   try {
     await api("/api/login", {
@@ -688,7 +828,7 @@ $("#loginForm").addEventListener("submit", async (e) => {
     $("#tokenIn").value = "";
     await bootstrap();
   } catch (e) {
-    toast(e.message === "unauthorized" ? tr("令牌不正确") : e.message, true);
+    toast(e.code === "unauthorized" ? tr("令牌不正确") : e.message, true);
   } finally {
     button.disabled = false;
   }
@@ -704,6 +844,7 @@ async function bootstrap() {
   try {
     const info = await api("/api/ping");
     role = info.role;
+    persistent = info.persistent;
     authenticated = true;
     $("#login").classList.remove("show");
     $("#logout").hidden = !info.auth;
@@ -712,7 +853,7 @@ async function bootstrap() {
       (info.persistent ? "" : " · " + tr("内存模式"));
     start();
   } catch (e) {
-    if (e.message !== "unauthorized") {
+    if (e.code !== "unauthorized") {
       authenticated = false;
       role = "view";
       try {
@@ -779,7 +920,7 @@ async function loadHistory(force = false) {
           ].sort((a, b) => a.t - b.t)
         : h;
     $("#historyStatus").textContent = h.length
-      ? `${h.length} ${tr("个采样点")}`
+      ? tr("{count} 个采样点", { count: h.length })
       : tr("此时间范围暂无历史数据");
     if (latestOverview) renderOverview(latestOverview);
   } catch (e) {
@@ -788,7 +929,7 @@ async function loadHistory(force = false) {
 }
 function renderAxes(hist, max) {
   const fmt = (t) =>
-    new Date(t * 1000).toLocaleString(lang === "en" ? "en-US" : "zh-CN", {
+    new Date(t * 1000).toLocaleString(I18n.locale(), {
       month: range === "7d" || range === "30d" ? "2-digit" : undefined,
       day: range === "7d" || range === "30d" ? "2-digit" : undefined,
       hour: "2-digit",
@@ -835,7 +976,7 @@ for (const selector of [".spark", ".chart"]) {
       line.setAttribute(k, v);
     line.style.display = "";
     $("#chartHint").textContent =
-      `${new Date(s.t * 1000).toLocaleString()} · CPU ${s.cpu.toFixed(1)}% · ↓ ${rate(s.rx)} · ↑ ${rate(s.tx)}`;
+      `${new Date(s.t * 1000).toLocaleString(I18n.locale())} · CPU ${s.cpu.toFixed(1)}% · ↓ ${rate(s.rx)} · ↑ ${rate(s.tx)}`;
     chart.setAttribute("aria-label", $("#chartHint").textContent);
   });
   chart.addEventListener("pointerleave", () => {
@@ -890,13 +1031,44 @@ $("#drawer").addEventListener("close", () => {
   drawerMode = "";
   drawerGeneration++;
 });
+function alertRule(rule) {
+  if (rule === "cpu") return "CPU";
+  if (rule === "mem") return tr("内存");
+  if (rule === "load1") return tr("负载");
+  const [type, ...parts] = rule.split(":");
+  return type === "disk"
+    ? tr("磁盘 {name}", { name: parts.join(":") })
+    : type === "service"
+      ? tr("服务 {name}", { name: parts.join(":") })
+      : rule;
+}
+function elapsedDuration(seconds) {
+  return seconds < 60
+    ? tr("{count} 秒", { count: Math.max(0, Math.floor(seconds)) })
+    : durShort(seconds);
+}
+function alertMessage(event) {
+  const rule = alertRule(event.rule);
+  return event.state === "resolved"
+    ? tr("{rule}已恢复，异常持续 {duration}", {
+        rule,
+        duration: elapsedDuration(
+          (new Date(event.at) - new Date(event.since)) / 1000,
+        ),
+      })
+    : tr("{rule}：当前 {value}，阈值 {threshold}", {
+        rule,
+        value: Number(event.value).toFixed(2),
+        threshold: Number(event.threshold).toFixed(2),
+      });
+}
 function renderAlertDrawer() {
   const content = $("#drawerContent");
   const rows = (items) =>
     items
       .map(
         (e) =>
-          `<div class="alertEntry"><strong class="${e.state === "firing" ? "heat-bad" : ""}">${esc(e.rule)} · ${tr(e.state === "firing" ? "触发" : "已恢复")}</strong><p>${esc(e.message)}</p><small>${new Date(e.at).toLocaleString()} · ${tr("开始于")} ${new Date(e.since).toLocaleString()}</small></div>`,
+          `<div class="alertEntry"><strong class="${e.state === "firing" ? "heat-bad" : ""}">${esc(alertRule(e.rule))} · ${tr(e.state === "firing" ? "触发" : "已恢复")}</strong><p>${esc(alertMessage(e))}</p><small>${new Date(e.at).toLocaleString(I18n.locale())} · ${tr("开始于")} ${new Date(e.since).toLocaleString(I18n.locale())}</small></div>`,
       )
       .join("") || `<p class="empty">${tr("暂无告警")}</p>`;
   content.innerHTML = `<h3>${tr("活跃告警")}</h3>${rows(alertData.active)}<h3>${tr("最近 50 条记录")}</h3>${rows(alertData.history)}`;
@@ -943,7 +1115,7 @@ async function openProcess(pid) {
     const unavailable = new Set(p.unavailable || []);
     const val = (key, v) => (unavailable.has(key) ? tr("权限不足或不支持") : v);
     $("#drawerContent").innerHTML =
-      `<dl><dt>${tr("命令行")}</dt><dd>${esc(val("command", p.command) || "—")}</dd><dt>${tr("工作目录")}</dt><dd>${esc(val("cwd", p.cwd) || "—")}</dd><dt>${tr("启动时间")}</dt><dd>${esc(val("created", new Date(p.created).toLocaleString()))}</dd><dt>${tr("线程数")}</dt><dd>${esc(val("threads", p.threads))}</dd><dt>${tr("打开文件数")}</dt><dd>${esc(val("openFiles", p.openFiles))}</dd></dl>${role === "admin" ? `<div class="segs"><button class="live danger" data-signal="TERM">${tr("结束进程")} (TERM)</button><button class="live danger" data-signal="KILL">${tr("强制结束")} (KILL)</button></div>` : ""}`;
+      `<dl><dt>${tr("命令行")}</dt><dd>${esc(val("command", p.command) || "—")}</dd><dt>${tr("工作目录")}</dt><dd>${esc(val("cwd", p.cwd) || "—")}</dd><dt>${tr("启动时间")}</dt><dd>${esc(val("created", new Date(p.created).toLocaleString(I18n.locale())))}</dd><dt>${tr("线程数")}</dt><dd>${esc(val("threads", p.threads))}</dd><dt>${tr("打开文件数")}</dt><dd>${esc(val("openFiles", p.openFiles))}</dd></dl>${role === "admin" ? `<div class="segs"><button class="live danger" data-signal="TERM">${tr("结束进程")} (TERM)</button><button class="live danger" data-signal="KILL">${tr("强制结束")} (KILL)</button></div>` : ""}`;
   } catch (e) {
     if (gen === drawerGeneration) $("#drawerContent").textContent = e.message;
   }
@@ -967,7 +1139,12 @@ $("#drawerContent").addEventListener("click", async (e) => {
   const pid = detailPID,
     created = detailCreated,
     sig = b.dataset.signal;
-  if (!confirm(`${tr("确定结束进程")} ${pid} (${sig})?`)) return;
+  if (
+    !(await confirmAction(
+      tr("确定结束进程 {pid}（{signal}）？", { pid, signal: sig }),
+    ))
+  )
+    return;
   b.disabled = true;
   try {
     await api(`/api/processes/${pid}/kill?signal=${sig}&created=${created}`, {
@@ -982,7 +1159,8 @@ $("#drawerContent").addEventListener("click", async (e) => {
   }
 });
 function renderContainers(d) {
-  $("#containersPanel").hidden = !d.available;
+  containerData = d;
+  $("#containers").hidden = !d.available;
   $("#dockerEmpty").hidden = Boolean(d.available);
   if (!d.available) {
     $("#dockerStatus").textContent = tr(
@@ -994,14 +1172,25 @@ function renderContainers(d) {
     (d.containers || [])
       .map(
         (c) =>
-          `<div class="containerRow"><div class="containerInfo"><b>${esc(c.name)}</b><small>${esc(c.image)} · ${esc(c.state)}</small></div><span>${c.statsAvailable ? c.cpu.toFixed(1) + "% · " + bytes(c.memory) : "—"}</span>${role === "admin" ? `<button class="live" data-container="${esc(c.id)}" data-action="${c.state === "running" ? "stop" : "start"}">${tr(c.state === "running" ? "停止" : "启动")}</button><button class="live" data-container="${esc(c.id)}" data-action="restart">${tr("重启")}</button>` : ""}</div>`,
+          `<div class="containerRow"><div class="containerInfo"><b>${esc(c.name)}</b><small>${esc(c.image)} · ${esc(stateLabel(c.state))}</small></div><span>${c.statsAvailable ? c.cpu.toFixed(1) + "% · " + bytes(c.memory) : "—"}</span>${role === "admin" ? `<button class="live" data-container="${esc(c.id)}" data-action="${c.state === "running" ? "stop" : "start"}">${tr(c.state === "running" ? "停止" : "启动")}</button><button class="live" data-container="${esc(c.id)}" data-action="restart">${tr("重启")}</button>` : ""}</div>`,
       )
       .join("") || tr("没有容器");
 }
 $("#containers").addEventListener("click", async (e) => {
   const b = e.target.closest("[data-container]");
   if (!b || b.disabled) return;
-  if (!confirm(`${tr("确认容器操作")} ${b.dataset.action}?`)) return;
+  const name =
+    containerData?.containers?.find((c) => c.id === b.dataset.container)
+      ?.name || b.dataset.container;
+  if (
+    !(await confirmAction(
+      tr("确定{action}容器“{name}”？", {
+        action: tr(VERB[b.dataset.action]),
+        name,
+      }),
+    ))
+  )
+    return;
   b.disabled = true;
   try {
     await api(`/api/containers/${b.dataset.container}/${b.dataset.action}`, {
@@ -1015,312 +1204,57 @@ $("#containers").addEventListener("click", async (e) => {
   }
 });
 
-// ---------- Preferences, shortcuts and offline shell ----------
-let lang = "zh";
-try {
-  lang =
-    localStorage.getItem("servmon.lang") ||
-    (navigator.language.startsWith("zh") ? "zh" : "en");
-} catch {}
-const messages = {
-  基础信息: "Overview",
-  "正在连接 Docker…": "Connecting to Docker…",
-  "Docker 暂不可用，请确认 Docker 已启动且 servmon 有访问权限。":
-    "Docker is unavailable. Check that Docker is running and servmon has access.",
-  告警: "Alerts",
-  退出: "Log out",
-  时间范围: "Time range",
-  "3 分钟": "3 minutes",
-  "1 小时": "1 hour",
-  "24 小时": "24 hours",
-  "7 天": "7 days",
-  "30 天": "30 days",
-  "负载 1/5/15": "Load 1/5/15",
-  本地时间: "Local time",
-  内存: "Memory",
-  磁盘: "Disks",
-  网络: "Network",
-  网络流量: "Network traffic",
-  每核占用: "Per-core usage",
-  进程: "Processes",
-  系统服务: "Services",
-  "按 CPU": "By CPU",
-  按内存: "By memory",
-  命令: "Command",
-  用户: "User",
-  关闭: "Close",
-  进入: "Sign in",
-  日志: "Logs",
-  "Docker 容器": "Docker containers",
-  "需要访问令牌才能查看此面板。": "An access token is required.",
-  输入令牌: "Access token",
-  "搜索名称 / 用户 / PID": "Search name / user / PID",
-  "自动 / 总流量": "Auto / aggregate",
-  管理权限: "Administrator",
-  只读模式: "Read only",
-  内存模式: "Memory only",
-  "加载历史…": "Loading history…",
-  个采样点: "samples",
-  此时间范围暂无历史数据: "No history in this range yet",
-  暂无数据: "No data",
-  暂无告警: "No alerts",
-  触发: "Firing",
-  已恢复: "Resolved",
-  开始于: "Since",
-  活跃告警: "Active alerts",
-  "最近 50 条记录": "Latest 50 events",
-  告警与通知: "Alerts and notifications",
-  服务日志: "Service logs",
-  自动跟随: "Follow logs",
-  暂无日志: "No log entries",
-  进程详情: "Process details",
-  "加载中…": "Loading…",
-  权限不足或不支持: "Unavailable or permission denied",
-  命令行: "Command line",
-  工作目录: "Working directory",
-  启动时间: "Started",
-  线程数: "Threads",
-  打开文件数: "Open files",
-  结束进程: "Terminate",
-  强制结束: "Force kill",
-  确定结束进程: "Terminate process",
-  操作完成: "Done",
-  没有容器: "No containers",
-  确认容器操作: "Confirm container action",
-  停止: "Stop",
-  启动: "Start",
-  重启: "Restart",
-  令牌不正确: "Invalid token",
-  "主题 自动": "Theme: Auto",
-  "主题 深色": "Theme: Dark",
-  "主题 浅色": "Theme: Light",
-  "● 实时刷新": "● Live",
-  "○ 已暂停": "○ Paused",
-  "已离线 · 显示最后一次数据": "Offline · showing last data",
-  移动到图上查看数值: "Hover over a chart for values",
-  "↓ 下行": "↓ Download",
-  "↑ 上行": "↑ Upload",
-  "— 下行": "— Download",
-  "— 上行": "— Upload",
-  暂无历史: "No history",
-  运行中: "Running",
-  已停止: "Stopped",
-  失败: "Failed",
-  未知: "Unknown",
-  未激活: "Inactive",
-  启动中: "Starting",
-  停止中: "Stopping",
-  重启中: "Restarting",
-  处理中: "Working",
-  没有找到磁盘: "No disks found",
-  没有进程数据: "No processes found",
-  峰值: "Peak",
-  缓存: "Cached",
-  累计: "Total",
-  温度: "Temperature",
-  频率: "Frequency",
-  核: "cores",
-  个挂载点: "mounts",
-  物理核: "physical cores",
-  线程: "threads",
-  运行: "Uptime",
-  内核: "Kernel",
-  "Swap 无": "No swap",
-  天: "d",
-  小时: "h",
-  分: "m",
-  自启: "Boot",
-  开: "On",
-  关: "Off",
-  已运行: "Running for",
-  个服务运行中: "services running",
-  共: "of",
-  个: "items",
-  刚刚: "just now",
-  近: "Last",
-  分钟: "minutes",
-  秒: "seconds",
-};
-function tr(s) {
-  return lang === "en" ? messages[s] || s : s;
-}
-function translateDynamic(raw) {
-  if (lang !== "en") return raw;
-  return raw.replace(/\d+–\d+ \/ 共 \d+ 个|[^\x00-\x7F]+/g, (part) => {
-    if (messages[part]) return messages[part];
-    return part.replace(
-      /个服务运行中|个挂载点|物理核|已运行|自启|缓存|累计|温度|频率|进程|运行|内核|小时|分钟|线程|天|分|核|秒|共|个|开|关/g,
-      (key) => messages[key] || key,
-    );
-  });
-}
-const originalText = new WeakMap();
-function localize(root = document.body) {
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  let node;
-  while ((node = walker.nextNode())) {
-    if (["SCRIPT", "STYLE"].includes(node.parentElement?.tagName)) continue;
-    const raw = node.textContent.trim();
-    if (messages[raw]) {
-      originalText.set(node, raw);
-      node.textContent = node.textContent.replace(raw, tr(raw));
-    } else if (originalText.has(node)) {
-      node.textContent = node.textContent.replace(
-        node.textContent.trim(),
-        tr(originalText.get(node)),
-      );
-    } else if (
-      lang === "en" &&
-      !node.parentElement?.closest("#procs,#drawerContent,#containers")
-    ) {
-      const translated = translateDynamic(raw);
-      if (translated !== raw)
-        node.textContent = node.textContent.replace(raw, translated);
-    }
-  }
-  for (const el of root.querySelectorAll("[placeholder]")) {
-    const raw = el.dataset.originalPlaceholder || el.placeholder;
-    el.dataset.originalPlaceholder = raw;
-    el.placeholder = tr(raw);
-  }
-  document.documentElement.lang = lang === "en" ? "en" : "zh-CN";
-  $(".page-tabs").setAttribute(
-    "aria-label",
-    lang === "en" ? "Monitoring pages" : "监控页面",
-  );
-  $("#language").textContent = lang === "en" ? "中文" : "EN";
-}
-$("#language").addEventListener("click", () => {
-  lang = lang === "en" ? "zh" : "en";
-  try {
-    localStorage.setItem("servmon.lang", lang);
-  } catch {}
-  location.reload();
-});
-let localizePending = false;
-const translationObserver = new MutationObserver(() => {
-  if (localizePending) return;
-  localizePending = true;
-  queueMicrotask(() => {
-    translationObserver.disconnect();
-    localize();
-    localizePending = false;
-    translationObserver.observe(document.body, {
-      childList: true,
-      subtree: true,
-      characterData: true,
-    });
-  });
-});
-localize();
-translationObserver.observe(document.body, {
-  childList: true,
-  subtree: true,
-  characterData: true,
-});
 document.addEventListener("keydown", (e) => {
   if (
     e.ctrlKey ||
     e.metaKey ||
     e.altKey ||
     e.target.matches("input,textarea,select") ||
-    $("#drawer").open ||
+    document.querySelector("dialog[open]") ||
     $("#login").classList.contains("show")
   )
     return;
   if (e.key === "/") {
     e.preventDefault();
-    showTab("processes");
+    showPanel("processes");
     $("#procSearch").focus();
   } else if (e.key.toLowerCase() === "p") $("#live").click();
   else if (e.key.toLowerCase() === "t") $("#theme").click();
 });
-for (const [index, section] of [
-  ...document.querySelectorAll("section.grid"),
-].entries()) {
-  section.dataset.group = index;
-  const cards = [...section.children];
-  cards.forEach((card, i) => {
-    card.dataset.panel = `${index}-${i}`;
-    const handle = document.createElement("button");
-    handle.type = "button";
-    handle.className = "dragHandle";
-    handle.textContent = "⠿";
-    handle.title = "Drag to reorder · Alt + ← / →";
-    handle.setAttribute("aria-label", handle.title);
-    card.querySelector(".hd").prepend(handle);
-    let dragging = false;
-    const clearDrag = () => {
-      dragging = false;
-      card.classList.remove("dragging");
-      section
-        .querySelectorAll(".dropTarget")
-        .forEach((x) => x.classList.remove("dropTarget"));
-    };
-    handle.addEventListener("pointerdown", (e) => {
-      if (e.button !== 0) return;
-      e.preventDefault();
-      handle.focus();
-      dragging = true;
-      handle.setPointerCapture(e.pointerId);
-      card.classList.add("dragging");
-    });
-    handle.addEventListener("pointermove", (e) => {
-      if (!dragging) return;
-      const target = document
-        .elementFromPoint(e.clientX, e.clientY)
-        ?.closest(".card");
-      for (const candidate of cards)
-        candidate.classList.toggle(
-          "dropTarget",
-          candidate === target && candidate !== card,
-        );
-    });
-    handle.addEventListener("pointerup", (e) => {
-      if (!dragging) return;
-      const target = document
-        .elementFromPoint(e.clientX, e.clientY)
-        ?.closest(".card");
-      clearDrag();
-      if (target && target !== card && target.parentElement === section) {
-        section.insertBefore(card, target);
-        saveOrder();
-      }
-      if (handle.hasPointerCapture(e.pointerId))
-        handle.releasePointerCapture(e.pointerId);
-    });
-    handle.addEventListener("pointercancel", clearDrag);
-    handle.addEventListener("lostpointercapture", clearDrag);
-    handle.addEventListener("keydown", (e) => {
-      if (!e.altKey) return;
-      if (e.key === "ArrowLeft" && card.previousElementSibling) {
-        section.insertBefore(card, card.previousElementSibling);
-        saveOrder();
-      }
-      if (e.key === "ArrowRight" && card.nextElementSibling) {
-        section.insertBefore(card.nextElementSibling, card);
-        saveOrder();
-      }
-    });
-  });
-  try {
-    const saved = JSON.parse(
-      localStorage.getItem("servmon.order." + index) || "[]",
-    );
-    for (const key of saved) {
-      const card = cards.find((c) => c.dataset.panel === key);
-      if (card) section.appendChild(card);
-    }
-  } catch {}
-  function saveOrder() {
-    try {
-      localStorage.setItem(
-        "servmon.order." + index,
-        JSON.stringify([...section.children].map((x) => x.dataset.panel)),
-      );
-    } catch {}
-  }
+function updateLanguage() {
+  I18n.apply();
+  $("#theme").textContent = tr(
+    THEME_LABEL[document.documentElement.dataset.themePref || "auto"],
+  );
+  $("#live").textContent = tr(live ? "● 实时刷新" : "○ 已暂停");
+  if (online !== null) setOnline(online);
+  if (authenticated)
+    $("#roleBadge").textContent =
+      tr(role === "admin" ? "管理权限" : "只读模式") +
+      (persistent ? "" : " · " + tr("内存模式"));
+  if ($("#iface").options.length)
+    $("#iface").options[0].textContent = tr("自动 / 总流量");
+  if (latestOverview) renderOverview(latestOverview);
+  renderProcs(cache.procs);
+  renderServices(cache.svcs);
+  renderAlerts(alertData);
+  if (containerData) renderContainers(containerData);
+  panelLayout.localize();
+  renderClock();
+  $("#toast").classList.remove("show");
 }
+const panelLayout = PanelLayout.init({
+  confirm: confirmAction,
+  tr,
+  toast,
+  showTab,
+  onChange: syncHistoryControls,
+});
+for (const selector of ["#language", "#loginLanguage"])
+  $(selector).addEventListener("click", () => {
+    I18n.setLanguage(I18n.language === "en" ? "zh" : "en");
+    updateLanguage();
+  });
 window.addEventListener("offline", () => {
   setOnline(false);
   $("#badge").textContent = tr("已离线 · 显示最后一次数据");
