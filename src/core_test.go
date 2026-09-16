@@ -419,16 +419,26 @@ func TestNotifierIndependentChannels(t *testing.T) {
 	done := make(chan struct{})
 	go func() { n.Run(ctx); close(done) }()
 	deadline := time.Now().Add(2 * time.Second)
-	for good.Load() == 0 && time.Now().Before(deadline) {
+	acknowledged := false
+	for time.Now().Before(deadline) {
+		// Receiving the request is not enough: cancellation before the client
+		// receives the response legitimately leaves that delivery queued.
+		n.mu.Lock()
+		acknowledged = len(n.queue) == 1 && n.queue[0].Target == bad.URL
+		n.mu.Unlock()
+		if acknowledged {
+			break
+		}
 		time.Sleep(10 * time.Millisecond)
 	}
 	cancel()
 	<-done
-	if good.Load() != 1 {
+	if good.Load() != 1 || !acknowledged {
 		t.Fatal("offline channel blocked healthy target")
 	}
 	n.Flush()
-	if len(NewNotifier(n.cfg, filepath.Dir(n.path)).queue) != 1 {
+	remaining := NewNotifier(n.cfg, filepath.Dir(n.path)).queue
+	if len(remaining) != 1 || remaining[0].Target != bad.URL {
 		t.Fatal("offline channel dropped")
 	}
 }

@@ -1,7 +1,7 @@
 // servmon — 单文件个人服务器监控面板
 //
-// 构建:  go build -ldflags="-s -w" -o servmon .
-// 运行:  sudo ./servmon -addr :8080 -token 你的密码 -services nginx,docker,sshd
+// 构建（项目根目录）: make build
+// 运行: sudo ./bin/servmon -addr :8080 -token 你的密码 -services nginx,docker,sshd
 package main
 
 import (

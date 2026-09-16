@@ -13,21 +13,48 @@
 ## 构建与测试
 
 ```bash
-go build -ldflags="-s -w" -o servmon .
-go test -race ./...
-go vet ./...
-GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o servmon-linux .
+make               # 本机二进制：bin/servmon
+make check         # Go 竞态测试、go vet、JavaScript 语法检查
+make linux         # bin/servmon-linux-amd64 和 bin/servmon-linux-arm64
+make help          # 查看全部目标
 ```
+
+在项目根目录执行。构建只需要 Go；`make check` 的前端语法检查还需要 Node.js，`make test` 的竞态检测需要可用的 CGO / C 编译器。服务器运行二进制不需要这些开发工具。
+
+`make run ARGS='-addr 127.0.0.1:8080 -data-dir ./data'` 可直接构建并启动；`make fmt` 格式化 Go 文件，`make clean` 仅删除 `bin/` 中的三个构建产物。可通过 `GO`、`GOFMT`、`NODE` 和 `LDFLAGS` 覆盖工具或构建选项。
+
+不使用 Make 时：`go build -trimpath -ldflags="-s -w" -o bin/servmon ./src`。Go 模块位于根目录，入口包位于 `./src`，测试仍可运行 `go test -race ./...`。
+
+## 目录结构
+
+```text
+servmon/
+├── src/                   # Go 源码与测试，同属 main 包
+│   ├── app.go             # 启动入口和命令行参数
+│   ├── main.go            # 采样器、数据结构和网页嵌入
+│   ├── *_test.go          # 后端测试
+│   └── web/               # 内嵌 HTML / CSS / JavaScript / PWA 资源
+├── scripts/               # 性能对比等开发脚本
+├── test-results/          # 已保存的测试结果
+├── bin/                   # 构建产物，不提交 Git
+├── Makefile               # 统一构建、测试与运行入口
+├── go.mod / go.sum        # Go 模块和依赖锁定
+├── servmon.example.yaml   # 配置示例
+├── plan.md                # 优化计划
+└── README.md / TESTING.md  # 使用说明与验收记录
+```
+
+网页放在 `src/web/`，与声明 `go:embed web` 的 Go 包相邻，构建后仍全部嵌入二进制。配置文件和数据目录仍按启动时的工作目录解析。
 
 ## 运行
 
 ```bash
 cp servmon.example.yaml servmon.yaml
 # 修改管理令牌、服务允许列表、告警和通知配置后启动
-./servmon -config servmon.yaml
+./bin/servmon -config servmon.yaml
 
 # 不使用配置文件
-./servmon -addr 127.0.0.1:8080 -token your-admin-token \
+./bin/servmon -addr 127.0.0.1:8080 -token your-admin-token \
   -view-token your-view-token -data-dir ./data -services nginx,sshd
 ```
 
