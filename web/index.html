@@ -1,605 +1,298 @@
 <!doctype html>
 <html lang="zh-CN">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="color-scheme" content="dark light">
-<title>servmon</title>
-<script>
-// 主题：localStorage 里的 servmon.theme 为 dark / light，缺省跟随系统；放在样式前面避免闪烁
-(function () {
-  const q = new URLSearchParams(location.search).get('theme');
-  if (q === 'dark' || q === 'light') { try { localStorage.setItem('servmon.theme', q); } catch {} }
-  else if (q === 'auto') { try { localStorage.removeItem('servmon.theme'); } catch {} }
-  let t = ''; try { t = localStorage.getItem('servmon.theme') || ''; } catch {}
-  const resolved = t || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
-  document.documentElement.dataset.theme = resolved;
-  document.documentElement.dataset.themePref = t || 'auto';
-  document.documentElement.style.colorScheme = resolved;
-})();
-</script>
-<style>
-:root{
-  --bg:#0c0f12; --panel:#12161a; --panel-2:#141920; --btn:#181d23; --btn-2:#14181d;
-  --border:#1e242b; --border-2:#22282f; --border-3:#262d35; --border-hi:#3a4450;
-  --line:#1c2228; --row:#171c21; --track:#1b2126; --hover:#151a1f;
-  --ink:#e4e8ea; --ink-2:#dbe1e5; --ink-3:#d3dade; --val:#cdd4d8; --soft:#b6bfc5;
-  --sub:#9aa4ab; --mute:#8b949e; --dim:#78838c; --dim-2:#6a747c; --dim-3:#5c666e; --off:#4d565e;
-  --accent:#38bdf8; --accent-hi:#7dd3fc; --accent-bg:#0b1c27; --accent-bd:#1d3a4c;
-  --tx:#94a3b8; --warn:#dda03c; --warn-bg:#1f1a10; --warn-bd:#453a20;
-  --bad:#e06c5a; --bad-fg:#e08a7a; --bad-bg:#221618; --bad-bd:#402a2a;
-  --sans:'IBM Plex Sans',ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"PingFang SC","Noto Sans SC","Microsoft YaHei",sans-serif;
-  --mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,"PingFang SC","Noto Sans SC","Microsoft YaHei",monospace;
-  --shadow:0 8px 30px rgba(0,0,0,.5);
-}
-:root[data-theme="light"]{
-  --bg:#f3f5f7; --panel:#ffffff; --panel-2:#f7f9fb; --btn:#eef1f4; --btn-2:#f3f5f8;
-  --border:#e1e6eb; --border-2:#d9dfe5; --border-3:#cfd6dd; --border-hi:#a9b3bd;
-  --line:#e6eaee; --row:#eef1f4; --track:#e4e9ee; --hover:#f3f6f9;
-  --ink:#1b232b; --ink-2:#232c34; --ink-3:#2b343d; --val:#39444e; --soft:#4b5763;
-  --sub:#5d6975; --mute:#6c7883; --dim:#77838e; --dim-2:#86919b; --dim-3:#96a0a9; --off:#b8c0c7;
-  --accent:#0284c7; --accent-hi:#0369a1; --accent-bg:#e8f4fc; --accent-bd:#b9dcf3;
-  --tx:#64748b; --warn:#b7791f; --warn-bg:#fdf5e3; --warn-bd:#f0d7a0;
-  --bad:#d14b3b; --bad-fg:#c0392b; --bad-bg:#fdeceb; --bad-bd:#f4c3bd;
-  --shadow:0 8px 30px rgba(20,30,40,.18);
-}
-*{box-sizing:border-box}
-html,body{margin:0;padding:0;background:var(--bg)}
-body{color:var(--ink);font:13px/1.45 var(--sans);font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}
-button{font:inherit;color:inherit;cursor:pointer}
-button:disabled{cursor:default;opacity:.45}
-.m{font-family:var(--mono)}
-:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-@keyframes pulseDot{0%,100%{opacity:1}50%{opacity:.35}}
-
-.wrap{min-height:100vh;max-width:1480px;margin:0 auto;padding:26px 26px 48px;display:flex;flex-direction:column;gap:18px}
-@media(max-width:600px){.wrap{padding:18px 16px 40px}}
-
-/* ---------- 顶栏 ---------- */
-.top{display:flex;flex-wrap:wrap;gap:20px;align-items:flex-end;justify-content:space-between;border-bottom:1px solid var(--border);padding-bottom:16px}
-.top .id{display:flex;flex-direction:column;gap:6px;min-width:0}
-.top .name{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.top .pulse{width:8px;height:8px;border-radius:50%;background:var(--accent);animation:pulseDot 2.4s ease-in-out infinite;flex:none}
-.top.off .pulse{background:var(--bad);animation:none}
-.top h1{margin:0;font:600 20px/1.2 var(--mono);letter-spacing:-.01em}
-.badge{font:11px/1.4 var(--mono);color:var(--accent);border:1px solid var(--accent-bd);background:var(--accent-bg);padding:2px 7px;border-radius:3px}
-.top.off .badge{color:var(--bad-fg);border-color:var(--bad-bd);background:var(--bad-bg)}
-.top .sys{font:12px/1.4 var(--mono);color:var(--dim)}
-.top .side{display:flex;gap:28px;align-items:flex-end;flex-wrap:wrap}
-.kv{display:flex;flex-direction:column;gap:4px}
-.kv .k{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim-2)}
-.kv .v{font:15px/1.3 var(--mono);color:var(--val)}
-.live{font:11px/1.3 var(--mono);color:var(--sub);background:var(--btn-2);border:1px solid var(--border-2);border-radius:4px;padding:7px 12px}
-.live:hover{border-color:var(--border-hi);color:var(--ink)}
-.top .btns{display:flex;gap:8px}
-
-/* ---------- 卡片 ---------- */
-.grid{display:grid;gap:14px}
-.g4{grid-template-columns:repeat(auto-fit,minmax(230px,1fr))}
-.g2{grid-template-columns:repeat(auto-fit,minmax(330px,1fr))}
-.g2b{grid-template-columns:repeat(auto-fit,minmax(340px,1fr));align-items:start}
-@media(max-width:400px){.g2,.g2b{grid-template-columns:1fr}}
-.card{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:16px;display:flex;flex-direction:column;gap:12px;min-width:0}
-.card.lg{padding:18px;gap:16px}
-.card .hd{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
-.card .hd .t{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
-.card.lg .hd{align-items:center}
-.card.lg .hd .t{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:none;color:var(--ink-3)}
-.card .hd .r{font:11px/1.4 var(--mono);color:var(--dim-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
-.big{display:flex;align-items:baseline;gap:6px;font-family:var(--mono)}
-.big b{font-size:34px;font-weight:500;line-height:1;color:var(--accent)}
-.big span{font-size:14px;color:var(--dim-3)}
-.spark{width:100%;height:54px;display:block;overflow:visible}
-.st-accent{stroke:var(--accent)} .st-tx{stroke:var(--tx)} .st-grid{stroke:var(--line)} .fl-accent{fill:var(--accent)}
-.bar{height:6px;background:var(--track);border-radius:3px;overflow:hidden}
-.bar i{display:block;height:100%;border-radius:3px;background:var(--accent);width:0;transition:width .6s ease}
-.bar.s{height:5px}
-.meta2{display:flex;justify-content:space-between;gap:10px;font:11px/1.4 var(--mono);color:var(--dim-2)}
-.note{font:11px/1.4 var(--mono);color:var(--dim-3);padding-bottom:6px}
-.heat-warn{color:var(--warn)!important} .heat-bad{color:var(--bad)!important}
-.bg-warn{background:var(--warn)!important} .bg-bad{background:var(--bad)!important}
-
-/* 磁盘 */
-.disks{display:flex;flex-direction:column;gap:11px}
-.disk{display:flex;flex-direction:column;gap:5px}
-.disk .l{display:flex;justify-content:space-between;gap:10px;font:11.5px/1.4 var(--mono)}
-.disk .l .mnt{color:var(--soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.disk .l .u{color:var(--accent);white-space:nowrap}
-
-/* 网络 */
-.net2{display:flex;gap:18px;flex-wrap:wrap}
-.net2 .kv .k{font:11px/1.4 var(--mono);color:var(--dim-2);letter-spacing:0;text-transform:none}
-.net2 .kv .v{font-size:20px}
-.net2 .rx .v{color:var(--accent)} .net2 .txv .v{color:var(--tx)}
-.legend{display:flex;gap:14px;font:11px/1.4 var(--mono);flex-wrap:wrap}
-.legend .rx{color:var(--accent)} .legend .tx{color:var(--tx)} .legend .n{color:var(--dim-3)}
-.chart{width:100%;height:190px;display:block}
-
-/* 每核 */
-.cores{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px 20px}
-.core{display:flex;align-items:center;gap:9px}
-.core .lb{font:11px/1.4 var(--mono);color:var(--dim-2);width:26px;flex:none}
-.core .bar{flex:1}
-.core .bar i{transition:width .7s ease}
-.core .pc{font:11px/1.4 var(--mono);color:var(--sub);width:30px;text-align:right;flex:none}
-.foot{display:flex;gap:20px;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:13px;font:11.5px/1.4 var(--mono);color:var(--dim)}
-
-/* 进程 */
-.seg{font:10.5px/1.4 var(--mono);padding:4px 9px;border-radius:3px;background:var(--btn);color:var(--mute);border:1px solid var(--border-3)}
-.seg.on{background:var(--accent-bg);color:var(--accent);border-color:var(--accent-bd)}
-.segs{display:flex;gap:6px}
-.prow{display:grid;grid-template-columns:52px minmax(0,1fr) 64px 60px 56px;gap:0 10px;align-items:center;font-family:var(--mono)}
-.phead{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim-3);border-bottom:1px solid var(--line);padding-bottom:8px}
-.plist{display:flex;flex-direction:column;margin-top:-6px}
-.plist .prow{padding:9px 0;border-bottom:1px solid var(--row);font-size:12px}
-.plist .prow:hover{background:var(--hover)}
-.prow .pid{color:var(--dim-3)}
-.prow .nm{color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.prow .us{color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.prow .cp{text-align:right;color:var(--val)}
-.prow .cp.hot{color:var(--warn)}
-.prow .mm{text-align:right;color:var(--sub)}
-@media(max-width:520px){.prow{grid-template-columns:48px minmax(0,1fr) 56px 52px}.prow .us{display:none}}
-.pager{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:11px;margin-top:-4px}
-.pager .info{font:11px/1.4 var(--mono);color:var(--dim-3)}
-.pager .pageNo{font:11px/1.4 var(--mono);color:var(--sub);padding:0 4px;align-self:center;min-width:64px;text-align:center}
-.pager .seg{padding:3px 9px;font-size:12px;line-height:1.2}
-[hidden]{display:none!important}
-
-/* 服务 */
-.svcs{display:flex;flex-direction:column;gap:8px}
-.svc{border:1px solid var(--border);border-radius:6px;padding:12px 13px;display:flex;flex-direction:column;gap:10px;background:var(--panel-2)}
-.svc .row1{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
-.svc .info{display:flex;flex-direction:column;gap:3px;min-width:0}
-.svc .unit{display:flex;align-items:center;gap:8px;min-width:0}
-.svc .dot{width:6px;height:6px;border-radius:50%;background:var(--off);flex:none}
-.svc .unit b{font:13px/1.4 var(--mono);color:var(--ink);font-weight:400;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.svc .desc{font-size:11.5px;color:var(--dim);padding-left:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.pill{font:10.5px/1.4 var(--mono);padding:3px 8px;border-radius:3px;white-space:nowrap;color:var(--mute);background:var(--btn);border:1px solid var(--border-3);flex:none}
-.svc.running .dot{background:var(--accent)}
-.svc.running .pill{color:var(--accent);background:var(--accent-bg);border-color:var(--accent-bd)}
-.svc.failed .dot{background:var(--bad)}
-.svc.failed .pill{color:var(--bad-fg);background:var(--bad-bg);border-color:var(--bad-bd)}
-.svc.busy .dot{background:var(--warn)}
-.svc.busy .pill{color:var(--warn);background:var(--warn-bg);border-color:var(--warn-bd)}
-.svc .acts{display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding-left:14px}
-.svc .acts button{font:11px/1.4 var(--mono);padding:5px 11px;border-radius:3px;background:var(--btn);color:var(--sub);border:1px solid var(--border-3)}
-.svc .acts button:hover:not(:disabled){color:var(--ink);border-color:var(--border-hi)}
-.svc .acts .pri.start{background:var(--accent-bg);color:var(--accent);border-color:var(--accent-bd)}
-.svc .acts .pri.stop{background:var(--bad-bg);color:var(--bad-fg);border-color:var(--bad-bd)}
-.svc .acts .boot{background:transparent;color:var(--dim-2);border-color:var(--border-2)}
-.svc .acts .boot.on{color:var(--sub);border-color:var(--border-hi)}
-.svc .acts .meta{font:11px/1.4 var(--mono);color:var(--dim-3);margin-left:auto;white-space:nowrap}
-.log{font:11px/1.4 var(--mono);color:var(--dim-3);border-top:1px solid var(--line);padding-top:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.empty{color:var(--dim);font-size:12px;padding:6px 0}
-.empty code{font-family:var(--mono);color:var(--sub)}
-
-/* ---------- 提示 / 登录 ---------- */
-.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--panel-2);color:var(--ink);border:1px solid var(--border-hi);
-  font:12px/1.4 var(--mono);padding:10px 16px;border-radius:6px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90vw;box-shadow:var(--shadow)}
-.toast.show{opacity:1}
-.toast.err{border-color:var(--bad-bd);color:var(--bad-fg)}
-.login{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;padding:16px}
-.login.show{display:flex}
-.login form{background:var(--panel);border:1px solid var(--border);padding:24px;border-radius:8px;width:340px;max-width:100%;display:flex;flex-direction:column;gap:12px}
-.login .t{font:600 13px/1.4 var(--mono);color:var(--ink-3)}
-.login p{margin:0;color:var(--dim);font-size:12px}
-.login input{font:13px/1.4 var(--mono);padding:9px 10px;border:1px solid var(--border-3);border-radius:4px;background:var(--bg);color:var(--ink)}
-.login button{font:12px/1.4 var(--mono);padding:9px;border:1px solid var(--accent-bd);border-radius:4px;background:var(--accent-bg);color:var(--accent)}
-</style>
-</head>
-<body>
-<div class="wrap">
-  <header class="top" id="top">
-    <div class="id">
-      <div class="name">
-        <span class="pulse"></span>
-        <h1 id="host">—</h1>
-        <span class="badge" id="badge">连接中</span>
-      </div>
-      <div class="sys" id="sys">正在连接…</div>
-    </div>
-    <div class="side">
-      <div class="kv"><span class="k">负载 1/5/15</span><span class="v" id="load">—</span></div>
-      <div class="kv"><span class="k">本地时间</span><span class="v" id="clock">—</span></div>
-      <div class="btns">
-        <button class="live" id="theme" title="切换主题：跟随系统 / 深色 / 浅色">主题 自动</button>
-        <button class="live" id="live">● 实时刷新</button>
-      </div>
-    </div>
-  </header>
-
-  <section class="grid g4">
-    <div class="card" style="padding-bottom:10px">
-      <div class="hd"><span class="t">CPU</span><span class="r" id="cpuModel"></span></div>
-      <div class="big"><b id="cpuV">—</b><span>%</span></div>
-      <svg class="spark" viewBox="0 0 300 70" preserveAspectRatio="none" aria-hidden="true">
-        <polyline id="cpuLine" class="st-accent" points="" fill="none" stroke-width="1.6" vector-effect="non-scaling-stroke"></polyline>
-        <polygon id="cpuArea" class="fl-accent" points="" opacity="0.09"></polygon>
-      </svg>
-    </div>
-
-    <div class="card">
-      <div class="hd"><span class="t">内存</span><span class="r" id="memText"></span></div>
-      <div class="big"><b id="memV">—</b><span>%</span></div>
-      <div style="display:flex;flex-direction:column;gap:9px">
-        <div class="bar"><i id="memBar"></i></div>
-        <div class="meta2"><span id="swapText">Swap —</span><span id="cacheText">缓存 —</span></div>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="hd"><span class="t">磁盘</span><span class="r" id="diskCount"></span></div>
-      <div class="disks" id="disks"></div>
-    </div>
-
-    <div class="card" style="padding-bottom:10px">
-      <div class="hd"><span class="t">网络</span><span class="r" id="iface"></span></div>
-      <div class="net2">
-        <div class="kv rx"><span class="k">↓ 下行</span><span class="v" id="rxV">—</span></div>
-        <div class="kv txv"><span class="k">↑ 上行</span><span class="v" id="txV">—</span></div>
-      </div>
-      <div class="note" id="netTotal">累计 —</div>
-    </div>
-  </section>
-
-  <section class="grid g2">
-    <div class="card lg">
-      <div class="hd">
-        <span class="t">网络流量</span>
-        <div class="legend"><span class="rx">— 下行</span><span class="tx">— 上行</span><span class="n" id="netRange">近 3 分钟</span></div>
-      </div>
-      <svg class="chart" viewBox="0 0 600 180" preserveAspectRatio="none" aria-hidden="true">
-        <line class="st-grid" x1="0" y1="45" x2="600" y2="45" stroke-width="1" vector-effect="non-scaling-stroke"></line>
-        <line class="st-grid" x1="0" y1="90" x2="600" y2="90" stroke-width="1" vector-effect="non-scaling-stroke"></line>
-        <line class="st-grid" x1="0" y1="135" x2="600" y2="135" stroke-width="1" vector-effect="non-scaling-stroke"></line>
-        <polygon id="rxArea" class="fl-accent" points="" opacity="0.1"></polygon>
-        <polyline id="rxLine" class="st-accent" points="" fill="none" stroke-width="1.8" vector-effect="non-scaling-stroke"></polyline>
-        <polyline id="txLine" class="st-tx" points="" fill="none" stroke-width="1.5" vector-effect="non-scaling-stroke"></polyline>
-      </svg>
-    </div>
-
-    <div class="card lg">
-      <div class="hd"><span class="t">每核占用</span><span class="r" id="coreCount"></span></div>
-      <div class="cores" id="cores"></div>
-      <div class="foot"><span id="temp">温度 —</span><span id="freq">频率 —</span><span id="procCount">进程 —</span></div>
-    </div>
-  </section>
-
-  <section class="grid g2b">
-    <div class="card lg" style="gap:14px">
-      <div class="hd">
-        <span class="t">进程</span>
-        <div class="segs">
-          <button class="seg on" data-sort="cpu">按 CPU</button>
-          <button class="seg" data-sort="mem">按内存</button>
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="color-scheme" content="dark light" />
+    <title>servmon</title>
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#0c0f12" />
+    <link rel="icon" href="/icon.svg" />
+    <script src="/theme.js"></script>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="top" id="top">
+        <div class="id">
+          <div class="name">
+            <span class="pulse"></span>
+            <h1 id="host">—</h1>
+            <span class="badge" id="badge">连接中</span>
+          </div>
+          <div class="sys" id="sys">正在连接…</div>
         </div>
-      </div>
-      <div class="prow phead"><span>PID</span><span>命令</span><span class="us">用户</span><span style="text-align:right">CPU</span><span style="text-align:right">内存</span></div>
-      <div class="plist" id="procs"></div>
-      <div class="pager" id="pager" hidden>
-        <span class="info" id="pageInfo"></span>
-        <div class="segs">
-          <button class="seg" id="pagePrev" aria-label="上一页">‹</button>
-          <span class="pageNo" id="pageNo"></span>
-          <button class="seg" id="pageNext" aria-label="下一页">›</button>
+        <div class="side">
+          <div class="kv">
+            <span class="k">负载 1/5/15</span><span class="v" id="load">—</span>
+          </div>
+          <div class="kv">
+            <span class="k">本地时间</span><span class="v" id="clock">—</span>
+          </div>
+          <div class="btns">
+            <button class="live" id="alertsButton">
+              告警 <b id="alertCount">0</b>
+            </button>
+            <button class="live" id="language" aria-label="Language">EN</button>
+            <button class="live" id="logout" hidden>退出</button>
+            <button
+              class="live"
+              id="theme"
+              title="切换主题：跟随系统 / 深色 / 浅色"
+            >
+              主题 自动
+            </button>
+            <button class="live" id="live">● 实时刷新</button>
+          </div>
         </div>
+      </header>
+
+      <div class="toolbar">
+        <label
+          >时间范围
+          <select id="range">
+            <option value="3m">3 分钟</option>
+            <option value="1h">1 小时</option>
+            <option value="24h">24 小时</option>
+            <option value="7d">7 天</option>
+            <option value="30d">30 天</option>
+          </select></label
+        ><span id="historyStatus" class="note"></span
+        ><span id="roleBadge" class="note"></span>
       </div>
+      <section class="grid g4">
+        <div class="card" id="cpuCard" style="padding-bottom: 10px">
+          <div class="hd">
+            <span class="t">CPU</span><span class="r" id="cpuModel"></span>
+          </div>
+          <div class="big"><b id="cpuV">—</b><span>%</span></div>
+          <div class="plot mini">
+            <div class="yScale">
+              <span>100%</span><span>50%</span><span>0%</span>
+            </div>
+            <svg
+              class="spark"
+              viewBox="0 0 300 70"
+              preserveAspectRatio="none"
+              role="img"
+              aria-label="历史曲线"
+            >
+              <polyline
+                id="cpuLine"
+                class="st-accent"
+                points=""
+                fill="none"
+                stroke-width="1.6"
+                vector-effect="non-scaling-stroke"
+              ></polyline>
+              <polygon
+                id="cpuArea"
+                class="fl-accent"
+                points=""
+                opacity="0.09"
+              ></polygon>
+            </svg>
+          </div>
+          <div class="axis" id="cpuAxis"></div>
+        </div>
+
+        <div class="card">
+          <div class="hd">
+            <span class="t" id="memTitle">内存</span
+            ><span class="r" id="memText"></span>
+          </div>
+          <div class="big"><b id="memV">—</b><span>%</span></div>
+          <div style="display: flex; flex-direction: column; gap: 9px">
+            <div class="bar"><i id="memBar"></i></div>
+            <div class="meta2">
+              <span id="swapText">Swap —</span
+              ><span id="cacheText">缓存 —</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="hd">
+            <span class="t" id="diskTitle">磁盘</span
+            ><span class="r" id="diskCount"></span>
+          </div>
+          <div class="disks" id="disks"></div>
+        </div>
+
+        <div class="card" style="padding-bottom: 10px">
+          <div class="hd">
+            <span class="t">网络</span
+            ><select id="iface" aria-label="网络接口"></select>
+          </div>
+          <div class="net2">
+            <div class="kv rx">
+              <span class="k">↓ 下行</span><span class="v" id="rxV">—</span>
+            </div>
+            <div class="kv txv">
+              <span class="k">↑ 上行</span><span class="v" id="txV">—</span>
+            </div>
+          </div>
+          <div class="note" id="netTotal">累计 —</div>
+        </div>
+      </section>
+
+      <section class="grid g2">
+        <div class="card lg">
+          <div class="hd">
+            <span class="t">网络流量</span>
+            <div class="legend">
+              <span class="rx">— 下行</span><span class="tx">— 上行</span
+              ><span class="n" id="netRange">近 3 分钟</span>
+            </div>
+          </div>
+          <div class="plot">
+            <div class="yScale" id="netScale"></div>
+            <svg
+              class="chart"
+              viewBox="0 0 600 180"
+              preserveAspectRatio="none"
+              role="img"
+              aria-label="历史曲线"
+            >
+              <line
+                class="st-grid"
+                x1="0"
+                y1="45"
+                x2="600"
+                y2="45"
+                stroke-width="1"
+                vector-effect="non-scaling-stroke"
+              ></line>
+              <line
+                class="st-grid"
+                x1="0"
+                y1="90"
+                x2="600"
+                y2="90"
+                stroke-width="1"
+                vector-effect="non-scaling-stroke"
+              ></line>
+              <line
+                class="st-grid"
+                x1="0"
+                y1="135"
+                x2="600"
+                y2="135"
+                stroke-width="1"
+                vector-effect="non-scaling-stroke"
+              ></line>
+              <polygon
+                id="rxArea"
+                class="fl-accent"
+                points=""
+                opacity="0.1"
+              ></polygon>
+              <polyline
+                id="rxLine"
+                class="st-accent"
+                points=""
+                fill="none"
+                stroke-width="1.8"
+                vector-effect="non-scaling-stroke"
+              ></polyline>
+              <polyline
+                id="txLine"
+                class="st-tx"
+                points=""
+                fill="none"
+                stroke-width="1.5"
+                vector-effect="non-scaling-stroke"
+              ></polyline>
+            </svg>
+          </div>
+          <div class="axis" id="netAxis"></div>
+          <div class="note" id="chartHint">移动到图上查看数值</div>
+        </div>
+
+        <div class="card lg">
+          <div class="hd">
+            <span class="t">每核占用</span
+            ><span class="r" id="coreCount"></span>
+          </div>
+          <div class="cores" id="cores"></div>
+          <div class="foot">
+            <span id="temp">温度 —</span><span id="freq">频率 —</span
+            ><span id="procCount">进程 —</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="grid g2b">
+        <div class="card lg" style="gap: 14px">
+          <div class="hd">
+            <span class="t">进程</span>
+            <div class="segs">
+              <button class="seg on" data-sort="cpu">按 CPU</button>
+              <button class="seg" data-sort="mem">按内存</button>
+            </div>
+          </div>
+          <input
+            id="procSearch"
+            type="search"
+            placeholder="搜索名称 / 用户 / PID"
+            aria-label="搜索进程"
+          />
+          <div class="prow phead">
+            <span>PID</span><span>命令</span><span class="us">用户</span
+            ><span style="text-align: right">CPU</span
+            ><span style="text-align: right">内存</span>
+          </div>
+          <div class="plist" id="procs"></div>
+          <div class="pager" id="pager" hidden>
+            <span class="info" id="pageInfo"></span>
+            <div class="segs">
+              <button class="seg" id="pagePrev" aria-label="上一页">‹</button>
+              <span class="pageNo" id="pageNo"></span>
+              <button class="seg" id="pageNext" aria-label="下一页">›</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card lg" style="gap: 14px">
+          <div class="hd">
+            <span class="t">系统服务</span><span class="r">systemd</span>
+          </div>
+          <div class="svcs" id="services"></div>
+          <div class="log" id="log">—</div>
+        </div>
+      </section>
+      <section class="card" id="containersPanel" hidden>
+        <div class="hd"><span class="t">Docker 容器</span></div>
+        <div id="containers"></div>
+      </section>
+    </div>
+    <dialog id="drawer">
+      <div class="drawerHead">
+        <h2 id="drawerTitle"></h2>
+        <button class="live" id="closeDrawer">关闭</button>
+      </div>
+      <div id="drawerContent"></div>
+    </dialog>
+
+    <div class="toast" id="toast" role="status"></div>
+    <div class="login" id="login">
+      <form id="loginForm">
+        <div class="t">servmon</div>
+        <p>需要访问令牌才能查看此面板。</p>
+        <input
+          id="tokenIn"
+          aria-label="访问令牌"
+          type="password"
+          placeholder="输入令牌"
+          autocomplete="current-password"
+        />
+        <button type="submit">进入</button>
+      </form>
     </div>
 
-    <div class="card lg" style="gap:14px">
-      <div class="hd"><span class="t">系统服务</span><span class="r">systemd</span></div>
-      <div class="svcs" id="services"></div>
-      <div class="log" id="log">—</div>
-    </div>
-  </section>
-</div>
-
-<div class="toast" id="toast" role="status"></div>
-<div class="login" id="login">
-  <form id="loginForm">
-    <div class="t">servmon</div>
-    <p>需要访问令牌才能查看此面板。</p>
-    <input id="tokenIn" type="password" placeholder="输入令牌" autocomplete="current-password">
-    <button type="submit">进入</button>
-  </form>
-</div>
-
-<script>
-'use strict';
-const $ = s => document.querySelector(s);
-let token = localStorage.getItem('servmon.token') || '';
-let sortBy = 'cpu';
-const PAGE_SIZE = 15;
-let page = 0;
-let live = true;
-let intervalMs = 2000;
-let tickTimer = null;
-let inFlight = false;
-let lastLog = '';
-const pending = new Map();   // 服务名 -> 正在执行的动作
-const cache = { procs: [], svcs: [] };
-
-// ---------- 工具 ----------
-function bytes(n, f = 1) {
-  const u = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']; let i = 0; n = Number(n) || 0;
-  while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
-  return n.toFixed(i === 0 ? 0 : f) + ' ' + u[i];
-}
-const rate = n => bytes(n, 1) + '/s';
-function dur(s) {
-  s = Math.max(0, Math.floor(s));
-  const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
-  return (d ? d + ' 天 ' : '') + (h ? h + ' 小时 ' : '') + m + ' 分';
-}
-function durShort(s) {
-  s = Math.max(0, Math.floor(s));
-  if (s < 60) return '刚刚';
-  const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
-  return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`;
-}
-const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const heat = v => v > 85 ? 'bad' : v > 60 ? 'warn' : '';
-function setHeat(el, v, prefix) {
-  el.classList.remove(prefix + '-warn', prefix + '-bad');
-  const h = heat(v); if (h) el.classList.add(prefix + '-' + h);
-}
-function toast(msg, err = false, ms = 2500) {
-  const t = $('#toast'); t.textContent = msg; t.classList.toggle('err', err); t.classList.add('show');
-  clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), ms);
-}
-function setLog(msg) { lastLog = msg; renderLog(); }
-function setOnline(ok) {
-  $('#top').classList.toggle('off', !ok);
-  $('#badge').textContent = ok ? 'online' : 'offline';
-}
-
-// 把序列映射成 SVG 折线的 points 字符串；n 为满幅点数，数据不足时靠右对齐
-function poly(vals, max, w, h, n) {
-  n = Math.max(n || vals.length, 2);
-  const off = n - vals.length;
-  return vals.map((v, i) => `${((i + off) / (n - 1) * w).toFixed(1)},${(h - Math.max(0, Math.min(1, v / max)) * h).toFixed(1)}`).join(' ');
-}
-function area(points, vals, w, h, n) {
-  if (!vals.length) return '';
-  n = Math.max(n || vals.length, 2);
-  const x0 = ((n - vals.length) / (n - 1) * w).toFixed(1);
-  return `${x0},${h} ${points} ${w},${h}`;
-}
-
-async function api(path, opts = {}) {
-  const h = Object.assign({}, opts.headers || {});
-  if (token) h['Authorization'] = 'Bearer ' + token;
-  const r = await fetch(path, Object.assign({}, opts, { headers: h }));
-  if (r.status === 401) { showLogin(); throw new Error('unauthorized'); }
-  const data = await r.json();
-  if (!r.ok) throw new Error(data.error || r.statusText);
-  return data;
-}
-
-// ---------- 渲染 ----------
-function renderOverview(o) {
-  const c = o.current || {};
-  const hist = o.history || [];
-  const n = 90;
-  if (o.interval > 0) intervalMs = Math.max(500, o.interval * 1000);
-
-  document.title = (o.host || 'servmon') + ' · servmon';
-  $('#host').textContent = o.host || '—';
-  $('#sys').textContent = [o.os, o.kernel ? '内核 ' + o.kernel : '', '运行 ' + dur(o.uptime)].filter(Boolean).join(' · ');
-  $('#load').textContent = (o.load || [0, 0, 0]).map(x => x.toFixed(2)).join(' / ');
-
-  // CPU
-  const cpuV = $('#cpuV'); cpuV.textContent = (c.cpu || 0).toFixed(1); setHeat(cpuV, c.cpu || 0, 'heat');
-  $('#cpuModel').textContent = o.cpuModel || (o.cores + ' 核');
-  $('#cpuModel').title = o.cpuModel || '';
-  const cpuPts = poly(hist.map(s => s.cpu), 100, 300, 70, n);
-  $('#cpuLine').setAttribute('points', cpuPts);
-  $('#cpuArea').setAttribute('points', area(cpuPts, hist, 300, 70, n));
-
-  // 内存
-  const memPct = c.mem || 0;
-  const memV = $('#memV'); memV.textContent = memPct.toFixed(0); setHeat(memV, memPct, 'heat');
-  $('#memText').textContent = `${bytes(o.memUsed)} / ${bytes(o.memTotal, 0)}`;
-  const memBar = $('#memBar'); memBar.style.width = memPct.toFixed(1) + '%'; setHeat(memBar, memPct, 'bg');
-  $('#swapText').textContent = o.swapTotal ? `Swap ${bytes(o.swapUsed)} / ${bytes(o.swapTotal, 0)}` : 'Swap 无';
-  $('#cacheText').textContent = '缓存 ' + bytes(o.memCached);
-
-  // 磁盘
-  const disks = o.disks || [];
-  $('#diskCount').textContent = disks.length + ' 个挂载点';
-  $('#disks').innerHTML = disks.map(d => `
-    <div class="disk">
-      <div class="l"><span class="mnt" title="${esc(d.fs)}">${esc(d.mount)}</span><span class="u ${heat(d.percent) ? 'heat-' + heat(d.percent) : ''}">${bytes(d.used)} / ${bytes(d.total, 0)} · ${d.percent.toFixed(0)}%</span></div>
-      <div class="bar s"><i class="${heat(d.percent) ? 'bg-' + heat(d.percent) : ''}" style="width:${d.percent.toFixed(1)}%"></i></div>
-    </div>`).join('') || '<div class="empty">没有找到磁盘</div>';
-
-  // 网络
-  $('#iface').textContent = o.netIface || '';
-  $('#rxV').textContent = rate(c.rx || 0);
-  $('#txV').textContent = rate(c.tx || 0);
-  $('#netTotal').textContent = `累计 ${bytes(o.netRxTotal)} ↓ · ${bytes(o.netTxTotal)} ↑`;
-  const rxs = hist.map(s => s.rx), txs = hist.map(s => s.tx);
-  const peak = Math.max(1, ...rxs, ...txs);
-  const netMax = peak * 1.15;
-  const rxPts = poly(rxs, netMax, 600, 180, n);
-  $('#rxLine').setAttribute('points', rxPts);
-  $('#rxArea').setAttribute('points', area(rxPts, rxs, 600, 180, n));
-  $('#txLine').setAttribute('points', poly(txs, netMax, 600, 180, n));
-  const span = Math.round(hist.length * (o.interval || 2));
-  $('#netRange').textContent = `近 ${span >= 120 ? Math.round(span / 60) + ' 分钟' : span + ' 秒'} · 峰值 ${rate(peak)}`;
-
-  // 每核
-  const cores = o.perCore || [];
-  const cc = $('#cores');
-  if (cc.children.length !== cores.length) {
-    cc.innerHTML = cores.map((_, i) => `<div class="core"><span class="lb">c${i}</span><div class="bar s"><i></i></div><span class="pc"></span></div>`).join('');
-  }
-  cores.forEach((p, i) => {
-    const row = cc.children[i], bar = row.querySelector('i');
-    bar.style.width = Math.max(1, p).toFixed(1) + '%'; setHeat(bar, p, 'bg');
-    row.querySelector('.pc').textContent = p.toFixed(0) + '%';
-  });
-  $('#coreCount').textContent = o.physical && o.physical !== o.cores ? `${o.physical} 物理核 / ${o.cores} 线程` : `${o.cores} 核`;
-  $('#temp').textContent = '温度 ' + (o.temp > 0 ? o.temp.toFixed(0) + '°C' : '—');
-  $('#freq').textContent = '频率 ' + (o.cpuMhz > 100 ? (o.cpuMhz / 1000).toFixed(2) + ' GHz' : '—');
-  $('#procCount').textContent = '进程 ' + (o.procCount || '—');
-}
-
-function renderProcs(list) {
-  cache.procs = list;
-  const pages = Math.max(1, Math.ceil(list.length / PAGE_SIZE));
-  page = Math.min(page, pages - 1);
-  const from = page * PAGE_SIZE, slice = list.slice(from, from + PAGE_SIZE);
-  $('#pager').hidden = list.length <= PAGE_SIZE;
-  $('#pageInfo').textContent = list.length ? `${from + 1}–${from + slice.length} / 共 ${list.length} 个` : '';
-  $('#pageNo').textContent = `${page + 1} / ${pages}`;
-  $('#pagePrev').disabled = page === 0;
-  $('#pageNext').disabled = page >= pages - 1;
-  $('#procs').innerHTML = slice.map(p => `<div class="prow" title="${esc(p.name)} · RSS ${bytes(p.rss)} · ${esc(p.status)}">
-    <span class="pid">${p.pid}</span>
-    <span class="nm">${esc(p.name)}</span>
-    <span class="us">${esc(p.user)}</span>
-    <span class="cp ${p.cpu > 20 ? 'hot' : ''}">${p.cpu.toFixed(1)}%</span>
-    <span class="mm">${p.memPct.toFixed(1)}%</span>
-  </div>`).join('') || '<div class="empty">没有进程数据</div>';
-}
-
-const ENABLED = new Set(['enabled', 'enabled-runtime', 'alias', 'linked', 'linked-runtime']);
-const LOCKED = new Set(['static', 'masked', 'masked-runtime', 'indirect', 'generated', 'transient']);
-
-function renderServices(list) {
-  cache.svcs = list;
-  const el = $('#services');
-  if (!list.length) {
-    el.innerHTML = '<div class="empty">启动时用 <code>-services nginx,docker</code> 指定要管理的服务。</div>';
-    renderLog(); return;
-  }
-  el.innerHTML = list.map(s => {
-    const act = pending.get(s.name);
-    const up = s.active === 'active';
-    const failed = s.active === 'failed';
-    const cls = act ? 'busy' : up ? 'running' : failed ? 'failed' : 'stopped';
-    const pill = act ? { start: '启动中', stop: '停止中', restart: '重启中', enable: '处理中', disable: '处理中' }[act]
-      : up ? '运行中' : failed ? '失败' : s.active === 'unknown' ? '未知' : '已停止';
-    const on = ENABLED.has(s.enabled), locked = LOCKED.has(s.enabled);
-    const meta = up ? (s.since ? '已运行 ' + durShort(s.since) : '运行中') : failed ? (s.sub || 'failed') : s.since ? '停止 ' + durShort(s.since) : '未激活';
-    return `<div class="svc ${cls}" data-name="${esc(s.name)}">
-      <div class="row1">
-        <div class="info">
-          <div class="unit"><span class="dot"></span><b title="${esc(s.active)} / ${esc(s.sub)}">${esc(s.name)}</b></div>
-          <span class="desc" title="${esc(s.description)}">${esc(s.description || s.sub || '')}</span>
-        </div>
-        <span class="pill">${pill}</span>
-      </div>
-      <div class="acts">
-        <button class="pri ${up ? 'stop' : 'start'}" data-act="${up ? 'stop' : 'start'}" ${act ? 'disabled' : ''}>${act ? '…' : up ? '停止' : '启动'}</button>
-        <button data-act="restart" ${act ? 'disabled' : ''}>重启</button>
-        <button class="boot ${on ? 'on' : ''}" data-act="${on ? 'disable' : 'enable'}" ${act || locked ? 'disabled' : ''} title="${esc(s.enabled || '')}">自启 ${locked ? esc(s.enabled) : on ? '开' : '关'}</button>
-        <span class="meta">${esc(meta)}</span>
-      </div>
-    </div>`;
-  }).join('');
-  renderLog();
-}
-
-function renderLog() {
-  const list = cache.svcs;
-  const running = list.filter(s => s.active === 'active').length;
-  const head = list.length ? `${running}/${list.length} 个服务运行中` : '';
-  $('#log').textContent = [head, lastLog].filter(Boolean).join(' · ') || '—';
-}
-
-// ---------- 轮询 ----------
-// 进程列表要遍历全部进程，比其它接口慢得多，所以各自到达各自渲染，不互相等待
-async function tick() {
-  if (inFlight) return;
-  inFlight = true;
-  const fast = Promise.all([api('/api/overview'), api('/api/services')])
-    .then(([o, s]) => { renderOverview(o); renderServices(s); setOnline(true); });
-  const slow = api('/api/processes?sort=' + sortBy + '&limit=all').then(renderProcs);
-  try {
-    await Promise.all([fast, slow]);
-  } catch (e) {
-    if (e.message !== 'unauthorized') setOnline(false);
-  } finally { inFlight = false; }
-}
-function schedule() {
-  clearTimeout(tickTimer);
-  if (!live || document.hidden) return;
-  tickTimer = setTimeout(async () => { await tick(); schedule(); }, intervalMs);
-}
-function start() { clearTimeout(tickTimer); tick().then(schedule); }
-function stop() { clearTimeout(tickTimer); }
-
-function renderClock() { $('#clock').textContent = new Date().toLocaleTimeString('zh-CN', { hour12: false }); }
-setInterval(renderClock, 1000); renderClock();
-
-// ---------- 交互 ----------
-$('#live').addEventListener('click', () => {
-  live = !live;
-  $('#live').textContent = live ? '● 实时刷新' : '○ 已暂停';
-  live ? start() : stop();
-});
-
-document.querySelectorAll('.seg[data-sort]').forEach(b => b.addEventListener('click', () => {
-  document.querySelectorAll('.seg[data-sort]').forEach(x => x.classList.toggle('on', x === b));
-  sortBy = b.dataset.sort; page = 0; tick();
-}));
-$('#pagePrev').addEventListener('click', () => { page = Math.max(0, page - 1); renderProcs(cache.procs); });
-$('#pageNext').addEventListener('click', () => { page = page + 1; renderProcs(cache.procs); });
-
-// 主题切换：自动 → 深色 → 浅色 → 自动
-const THEME_LABEL = { auto: '主题 自动', dark: '主题 深色', light: '主题 浅色' };
-function applyTheme(pref) {
-  const root = document.documentElement;
-  const resolved = pref === 'auto' ? (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark') : pref;
-  root.dataset.theme = resolved; root.dataset.themePref = pref; root.style.colorScheme = resolved;
-  $('#theme').textContent = THEME_LABEL[pref];
-  try { pref === 'auto' ? localStorage.removeItem('servmon.theme') : localStorage.setItem('servmon.theme', pref); } catch {}
-}
-$('#theme').addEventListener('click', () => {
-  const order = ['auto', 'dark', 'light'];
-  applyTheme(order[(order.indexOf(document.documentElement.dataset.themePref || 'auto') + 1) % order.length]);
-});
-matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => {
-  if ((document.documentElement.dataset.themePref || 'auto') === 'auto') applyTheme('auto');
-});
-$('#theme').textContent = THEME_LABEL[document.documentElement.dataset.themePref || 'auto'];
-
-const VERB = { start: '启动', stop: '停止', restart: '重启', enable: '开启自启', disable: '关闭自启' };
-$('#services').addEventListener('click', async e => {
-  const btn = e.target.closest('button[data-act]'); if (!btn || btn.disabled) return;
-  const name = btn.closest('.svc').dataset.name, act = btn.dataset.act;
-  if (act === 'stop' && !confirm('确定停止 ' + name + '？')) return;
-  pending.set(name, act); renderServices(cache.svcs);
-  setLog(`systemctl ${act} ${name} …`);
-  try {
-    const info = await api(`/api/services/${encodeURIComponent(name)}/${act}`, { method: 'POST' });
-    setLog(`systemctl ${act} ${name} — 完成`);
-    toast(`${name} 已${VERB[act]}`);
-    pending.delete(name);
-    cache.svcs = cache.svcs.map(s => s.name === name ? info : s);
-    renderServices(cache.svcs);
-  } catch (err) {
-    pending.delete(name);
-    setLog(`systemctl ${act} ${name} — 失败：${err.message}`);
-    toast('操作失败：' + err.message, true, 5000);
-    renderServices(cache.svcs);
-  }
-  tick();
-});
-
-function showLogin() { stop(); $('#login').classList.add('show'); $('#tokenIn').focus(); }
-$('#loginForm').addEventListener('submit', async e => {
-  e.preventDefault();
-  token = $('#tokenIn').value.trim();
-  try { await api('/api/ping'); localStorage.setItem('servmon.token', token); $('#login').classList.remove('show'); start(); }
-  catch { toast('令牌不正确', true); }
-});
-
-document.addEventListener('visibilitychange', () => document.hidden ? stop() : (live && start()));
-start();
-</script>
-</body>
+    <script src="/app.js"></script>
+  </body>
 </html>

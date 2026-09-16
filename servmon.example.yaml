@@ -1,16 +1,28 @@
-# servmon 配置文件示例。复制为 servmon.yaml 放在启动目录，或用 -config 指定路径。
-# 命令行里显式给出的参数会覆盖这里的同名配置。
-
-# 监听地址
+# 单文件部署；命令行显式参数覆盖这里的配置。
 addr: ":8080"
-
-# 访问令牌，为空则不鉴权（暴露到公网务必设置）
+# 公网使用长随机令牌，建议通过 HTTPS 反向代理访问。
 token: ""
-
-# 允许控制的 systemd 服务；也可以写成逗号分隔的字符串 "nginx,docker"
-services:
-  - nginx
-  - docker
-
-# 采样间隔，Go duration 格式：2s、500ms、1m
+# 必须与管理令牌不同；只读角色不能操作服务、进程和容器。
+view_token: ""
+services: [nginx, docker]
 interval: 2s
+proc_interval: 5s
+# 不可写时回退内存模式；写操作需要可用的审计日志，否则拒绝执行。
+data_dir: /var/lib/servmon
+
+# 阈值 0 为关闭。CPU / 内存 / 磁盘为百分比；load1 为绝对负载。
+alerts:
+  cpu: 90
+  mem: 90
+  disk: 90
+  load1: 0
+  service_failed: true
+  sustain: 30s
+  cooldown: 10m
+notify:
+  # 可使用单个 URL 字符串，也可以是多个 URL 的列表。
+  webhook: []
+  # webhook: ["https://example.com/hook"]
+  telegram:
+    token: ""
+    chat_id: ""

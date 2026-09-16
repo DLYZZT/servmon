@@ -1,0 +1,17 @@
+{
+  "id": "/",
+  "name": "servmon",
+  "short_name": "servmon",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0c0f12",
+  "theme_color": "#0c0f12",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
