@@ -95,6 +95,8 @@ const PanelLayout = (() => {
       hoverTimer = null,
       frame = 0,
       movePanelID = null;
+    let editing = false;
+    const editButton = document.querySelector("#editLayout");
     const dialog = document.createElement("dialog");
     dialog.id = "movePanelDialog";
     dialog.innerHTML = `<form method="dialog"><h2 id="movePanelTitle"></h2><label><span data-i18n="目标位置"></span><select id="moveDestination"></select></label><label><span data-i18n="面板位置"></span><select id="movePosition"><option value="last" data-i18n="最后"></option><option value="first" data-i18n="最前"></option></select></label><div class="dialog-actions"><button type="button" class="live" id="cancelMove" data-i18n="取消"></button><button type="submit" class="live" data-i18n="移动"></button></div></form>`;
@@ -107,6 +109,8 @@ const PanelLayout = (() => {
       destination.appendChild(option);
     }
     function localize() {
+      editButton.dataset.i18n = editing ? "完成编辑" : "编辑布局";
+      editButton.textContent = tr(editButton.dataset.i18n);
       I18n.apply(dialog);
       for (const option of destination.options)
         option.textContent = zoneTitle(zones.get(option.value));
@@ -123,13 +127,40 @@ const PanelLayout = (() => {
       }
       for (const zone of zones.values()) {
         zone.setAttribute("aria-label", zoneTitle(zone));
-        I18n.apply(zone.querySelector(".zone-empty"));
+        const empty = zone.querySelector(".zone-empty");
+        empty.dataset.i18n = editing
+          ? "将面板拖到这里，或使用其它面板的“移动到…”"
+          : "暂无面板。点击“编辑布局”可添加面板。";
+        I18n.apply(empty);
       }
       if (movePanelID)
         dialog.querySelector("h2").textContent = tr("移动“{panel}”", {
           panel: title(panels.get(movePanelID)),
         });
     }
+    function setEditing(enabled) {
+      if (!enabled) {
+        finish(true);
+        if (dialog.open) dialog.close();
+      }
+      const hidingFocus =
+        !enabled &&
+        document.activeElement?.matches(
+          ".dragHandle, .movePanel, #resetLayout",
+        );
+      editing = enabled;
+      document.body.classList.toggle("layout-editing", editing);
+      editButton.setAttribute("aria-pressed", String(editing));
+      document.querySelector("#resetLayout").hidden = !editing;
+      document.querySelector("#layoutHelp").hidden = !editing;
+      for (const panel of panels.values()) {
+        panel.querySelector(".dragHandle").hidden = !editing;
+        panel.querySelector(".movePanel").hidden = !editing;
+      }
+      localize();
+      if (hidingFocus) editButton.focus();
+    }
+    editButton.addEventListener("click", () => setEditing(!editing));
     const contents = (zone) =>
       [...zone.children].filter((x) => x.matches("[data-panel]"));
     function refresh() {
@@ -165,7 +196,7 @@ const PanelLayout = (() => {
       refresh();
     }
     function move(panel, zone, before = null) {
-      if (!panel || !zone || before === panel) return;
+      if (!editing || !panel || !zone || before === panel) return;
       zone.insertBefore(panel, before || zone.querySelector(".zone-empty"));
       refresh();
       save();
@@ -177,6 +208,7 @@ const PanelLayout = (() => {
       return message;
     }
     function openMove(panel) {
+      if (!editing) return;
       movePanelID = panel.dataset.panel;
       destination.value = panel.parentElement.dataset.zone;
       dialog.querySelector("#movePosition").value = "last";
@@ -364,14 +396,16 @@ const PanelLayout = (() => {
       handle.type = "button";
       handle.className = "dragHandle";
       handle.textContent = "⠿";
+      handle.hidden = true;
       heading.prepend(handle);
       const moveButton = document.createElement("button");
       moveButton.type = "button";
       moveButton.className = "seg movePanel";
+      moveButton.hidden = true;
       heading.appendChild(moveButton);
       moveButton.addEventListener("click", () => openMove(panel));
       handle.addEventListener("pointerdown", (e) => {
-        if (e.button !== 0 || drag) return;
+        if (!editing || e.button !== 0 || drag) return;
         e.preventDefault();
         handle.focus();
         drag = {
@@ -392,6 +426,7 @@ const PanelLayout = (() => {
       });
       handle.addEventListener("keydown", (e) => {
         if (
+          !editing ||
           !e.altKey ||
           !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)
         )
@@ -410,14 +445,16 @@ const PanelLayout = (() => {
     document
       .querySelector("#resetLayout")
       .addEventListener("click", async () => {
+        if (!editing) return;
         if (!(await confirm(tr("确定恢复默认布局？")))) return;
+        if (!editing) return;
         finish(true);
         apply(DEFAULT);
         save();
         toast(tr("布局已恢复"));
       });
     apply(loadSaved((key) => localStorage.getItem(key)));
-    localize();
+    setEditing(false);
     return { localize };
   }
   return { init, normalize, loadSaved };

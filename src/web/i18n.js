@@ -242,6 +242,12 @@ const I18n = (() => {
       "Invalid server response. Please try again later.",
     "请求失败（HTTP {status}）。": "Request failed (HTTP {status}).",
     恢复默认布局: "Restore default layout",
+    编辑布局: "Edit layout",
+    完成编辑: "Done editing",
+    "拖动手柄调整位置，或使用省略号跨页移动。修改会自动保存。":
+      "Drag handles to reorder panels or use the ellipsis menu to move them between tabs. Changes are saved automatically.",
+    "暂无面板。点击“编辑布局”可添加面板。":
+      "No panels here. Select “Edit layout” to add panels.",
     "确定恢复默认布局？": "Restore the default panel layout?",
     布局已恢复: "Default layout restored",
     移动面板: "Move panel",

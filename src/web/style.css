@@ -1156,8 +1156,19 @@ pre {
 .extra-zone.is-empty {
   display: none;
 }
-.layout-dragging .extra-zone.is-empty {
+.layout-editing .extra-zone.is-empty {
   display: grid;
+}
+.layout-help {
+  margin: 0;
+  color: var(--sub);
+  font-size: 12px;
+  line-height: 1.6;
+}
+#editLayout[aria-pressed="true"] {
+  color: var(--accent);
+  background: var(--accent-bg);
+  border-color: var(--accent-bd);
 }
 .layout-dragging {
   user-select: none;
