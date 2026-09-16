@@ -1,0 +1,8 @@
+# 构建产物
+servmon
+servmon-*
+
+# 本机配置（含令牌），只提交示例文件
+servmon.yaml
+
+.DS_Store
