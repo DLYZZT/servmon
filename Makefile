@@ -6,7 +6,7 @@ NODE ?= node
 LDFLAGS ?= -s -w
 ARGS ?=
 
-.PHONY: build run test vet check check-js test-web fmt linux linux-amd64 linux-arm64 clean help
+.PHONY: build run test vet check check-js test-web check-install test-install fmt linux linux-amd64 linux-arm64 clean help
 
 build:
 	mkdir -p bin
@@ -21,7 +21,7 @@ test:
 vet:
 	$(GO) vet ./...
 
-check: test vet check-js test-web
+check: test vet check-js test-web check-install
 
 check-js:
 	$(NODE) --check src/web/app.js
@@ -32,6 +32,13 @@ check-js:
 
 test-web:
 	$(NODE) --test tests/*.test.cjs
+
+check-install:
+	bash -n install.sh tests/install.test.sh
+
+# Writes only inside a disposable container; source checkout is read-only.
+test-install: linux check-install
+	docker run --rm --network none -v "$(CURDIR):/work:ro" --entrypoint bash node:22-bookworm-slim /work/tests/install.test.sh
 
 fmt:
 	$(GOFMT) -w src
@@ -58,6 +65,8 @@ help:
 	  'make vet           Run go vet' \
 	  'make check         Run Go/JS tests, vet and syntax checks' \
 	  'make test-web      Run localization and layout tests' \
+	  'make check-install Check installer shell syntax' \
+	  'make test-install  Test installation in a disposable Docker container' \
 	  'make fmt           Format Go source files' \
 	  'make linux         Build Linux amd64 and arm64 binaries' \
 	  'make linux-amd64   Build only the Linux amd64 binary' \

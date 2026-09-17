@@ -39,6 +39,7 @@ servmon/
 ├── test-results/          # 已保存的测试结果
 ├── bin/                   # 构建产物，不提交 Git
 ├── Makefile               # 统一构建、测试与运行入口
+├── install.sh             # Linux / systemd 安装与升级
 ├── go.mod / go.sum        # Go 模块和依赖锁定
 ├── servmon.example.yaml   # 配置示例
 ├── plan.md                # 优化计划
@@ -71,6 +72,40 @@ cp servmon.example.yaml servmon.yaml
 | `-data-dir` | `data_dir` | `/var/lib/servmon`；空值显式禁用落盘 |
 
 CLI 显式给出的值优先，包含空字符串。完整配置见 [servmon.example.yaml](servmon.example.yaml)。告警默认禁用；示例文件启用常用阈值。修改配置后重启生效。
+
+## Linux 安装
+
+支持 amd64 / arm64，需要 Bash、常用 GNU 文件工具、root 权限和 systemd。在有 Go 的源码目录中：
+
+```bash
+sudo ./install.sh --build
+```
+
+也可以在开发机执行 `make linux`，将 `install.sh` 和对应二进制拷到服务器同一目录，服务器无需 Go：
+
+```bash
+sudo ./install.sh --binary ./servmon-linux-amd64
+# arm64 服务器使用 ./servmon-linux-arm64
+```
+
+不指定 `--binary` / `--build` 时，脚本按顺序查找 `bin/servmon-linux-架构`、同目录的 `servmon-linux-架构`、`bin/servmon`、同目录的 `servmon`，找不到才尝试源码构建；不下载发布文件。显式 `--build` 可避免升级时误用旧构建产物。
+
+脚本安装到 `/usr/local/bin/servmon`，配置在 `/etc/servmon.yaml`，systemd 单元在 `/etc/systemd/system/servmon.service`，默认数据目录是 `/var/lib/servmon`。首次安装自动生成不同的管理 / 只读令牌，配置权限为 `600`，默认监听 `127.0.0.1:8080`，服务允许列表为空。令牌只写入配置，不打印到安装日志；可用 `sudo cat /etc/servmon.yaml` 在服务器本机查看并调整配置。
+
+```bash
+# 首次生成配置时更改监听地址
+sudo ./install.sh --binary ./servmon-linux-amd64 --addr :8080
+
+# 首次使用准备好的配置；已有 /etc/servmon.yaml 时保持原样
+sudo ./install.sh --binary ./servmon-linux-amd64 --config ./my-servmon.yaml
+
+# 只安装文件，不启用、启动或重启服务；可用于 systemd 未运行的镜像
+sudo ./install.sh --binary ./servmon-linux-amd64 --no-start
+```
+
+重复执行即升级：原子替换二进制和服务文件，保留已有配置、令牌与监控数据，然后启用开机自启并启动或重启服务。`--config` 和 `--addr` 不修改已有配置。服务以 root 运行以支持系统服务、进程和 Docker 管理；自定义 systemd 设置请放在 `servmon.service.d/` 的 drop-in 中。配置中的相对路径按 `/var/lib/servmon` 解析。
+
+若替换后的服务启动失败，脚本返回非零状态，并尝试恢复旧二进制、服务文件及原运行状态；配置和数据保留以便排障。使用 `systemctl status servmon.service` 或 `journalctl -u servmon.service -f` 查看状态。`make check-install` 检查脚本语法，`make test-install` 在隔离 Docker 容器中测试安装和回滚，不在宿主机执行安装。
 
 ## 历史与通知
 
