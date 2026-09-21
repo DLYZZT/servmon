@@ -1,4 +1,8 @@
-# servmon
+<p align="center">
+  <img src="assets/logo.png" alt="servmon 项目图标" width="112" height="112" />
+</p>
+
+<h1 align="center">servmon</h1>
 
 单文件个人服务器监控：Go + 内嵌网页，无前端框架、外部资源或数据库依赖。
 
@@ -6,6 +10,8 @@
 - 支持最长 30 天历史、阈值告警，以及 Webhook / Telegram 触发和恢复通知。
 - 管理与只读角色分离，支持进程结束、服务和容器控制及操作审计。
 - SSE 实时更新，支持中英文、深浅主题、自定义面板布局和 PWA。
+
+![servmon 主界面：CPU、内存、磁盘、网络流量与各核心使用率](assets/image.png)
 
 ## 快速安装
 
