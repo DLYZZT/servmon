@@ -228,9 +228,16 @@ echo 'PASS: standalone script automatically downloads latest release'
 clean_install
 # Emulate the repository-aware install.sh attached by the release workflow.
 sed "s|^default_repo=.*$|default_repo='example/servmon'|" "$repo/install.sh" > "$suite/release-install.sh"
-cat "$suite/release-install.sh" | bash -s -- --download --no-start
+# Even inside a checkout with binaries and Go available, stdin without any
+# arguments must select the latest release and enable/start the Linux service.
+: > "$suite/downloads"
+rm -f "$suite/state/built"
+(cd "$repo" && cat "$suite/release-install.sh" | bash)
 cmp "$binary" /usr/local/bin/servmon
-echo 'PASS: release installer works through stdin without --repo'
+grep -q "/latest/download/servmon-linux-$arch$" "$suite/downloads" || fail 'stdin did not download latest'
+[[ ! -f $suite/state/built ]] || fail 'stdin unexpectedly built local source'
+[[ -f $suite/state/active && -f $suite/state/enabled ]] || fail 'stdin did not enable/start service'
+echo 'PASS: argument-free stdin downloads latest and starts the service from any directory'
 
 cp /etc/servmon.yaml "$suite/online-config"
 cp /etc/systemd/system/servmon.service "$suite/online-unit"

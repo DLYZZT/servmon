@@ -11,22 +11,23 @@
 
 支持 Linux / macOS 的 x86_64（amd64）和 ARM64（arm64）。在线安装无需 Go，需要 Bash、curl 或 wget、SHA-256 工具和 root 权限；Linux 还需要 systemd。
 
-从 GitHub Releases 安装最新正式版本：
+一条命令安装或升级到最新正式版本：
+
+```bash
+curl -fsSL https://github.com/DLYZZT/servmon/releases/latest/download/install.sh | sudo bash
+```
+
+管道执行无需参数，脚本自动检测系统和架构，从 `DLYZZT/servmon` 下载最新二进制，并验证 `checksums.txt` 中的 SHA-256。
+
+也可先保存脚本再安装，或指定版本：
 
 ```bash
 curl -fsSL https://github.com/DLYZZT/servmon/releases/latest/download/install.sh -o install.sh
 sudo bash install.sh --download
-# 指定版本，或使用源码仓库里的安装脚本：
-sudo bash install.sh --repo DLYZZT/servmon --version v0.1
+sudo bash install.sh --version v0.1
 ```
 
-安装脚本默认使用 `DLYZZT/servmon`；也可用 `--repo` 或 `SERVMON_REPO` 指定其他仓库。Release 附带的脚本会自动带入发布仓库名。支持管道执行：
-
-```bash
-curl -fsSL https://github.com/DLYZZT/servmon/releases/latest/download/install.sh | sudo bash -s -- --download
-```
-
-脚本自动检测系统和架构，下载对应二进制并验证 `checksums.txt` 中的 SHA-256。`--download` 强制在线安装，`--repo` / `--version` 隐含此选项；不指定来源时，依次尝试本地二进制、源码编译和在线下载。
+安装脚本默认使用 `DLYZZT/servmon`；也可用 `--repo` 或 `SERVMON_REPO` 指定其他仓库。Release 附带的脚本会自动带入发布仓库名。`--download` 强制在线安装，`--repo` / `--version` 隐含此选项；从本地文件执行且不指定来源时，依次尝试本地二进制、源码编译和在线下载。
 
 在已安装 Go 1.22+ 的源码目录中也可执行：
 
