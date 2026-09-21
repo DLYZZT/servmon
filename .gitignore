@@ -7,3 +7,8 @@ servmon-*
 servmon.yaml
 
 .DS_Store
+
+# 本地计划与验收记录
+/docs/plan.md
+/docs/TESTING.md
+/docs/testing.md

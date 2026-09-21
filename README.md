@@ -42,8 +42,8 @@ servmon/
 ├── install.sh             # Linux / systemd 安装与升级
 ├── go.mod / go.sum        # Go 模块和依赖锁定
 ├── servmon.example.yaml   # 配置示例
-├── plan.md                # 优化计划
-└── README.md / TESTING.md  # 使用说明与验收记录
+├── docs/                  # 本地优化计划与验收记录，不提交 Git
+└── README.md              # 使用说明
 ```
 
 网页放在 `src/web/`，与声明 `go:embed web` 的 Go 包相邻，构建后仍全部嵌入二进制。配置文件和数据目录仍按启动时的工作目录解析。
@@ -194,6 +194,6 @@ PWA 安装要求 HTTPS 或 localhost。离线时保留最后一次数据并明�
 
 ## 验证记录
 
-见 [TESTING.md](TESTING.md)，包含自动化测试、性能测量、Computer Use 操作结果及平台验证限制。
+本地验收记录保存在 `docs/TESTING.md`，包含自动化测试、性能测量、Computer Use 操作结果及平台验证限制。该文件不提交 Git，克隆仓库后不会自带。
 
 性能比较工具：`python3 scripts/benchmark.py --baseline /path/to/old --candidate /path/to/new`，默认运行 600 秒并输出累计 CPU 时间及比值。
