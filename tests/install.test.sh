@@ -308,6 +308,81 @@ for mac_arch in amd64 arm64; do
   expect_fail --binary "$repo/bin/servmon-darwin-$mac_arch" --config "$suite/replacement.yaml"
   if [[ $mac_arch == amd64 ]]; then other_arch=arm64; else other_arch=amd64; fi
   expect_fail --binary "$repo/bin/servmon-darwin-$other_arch"
+  expect_fail --uninstall --purge
+  [[ -x /usr/local/bin/servmon ]] || fail 'macOS purge rejection removed binary'
+  run --uninstall
+  run --uninstall
+  [[ ! -e /usr/local/bin/servmon && ! -s $suite/state/calls ]] || fail 'macOS uninstall failed or called systemctl'
 done
 rm "$suite/mock/uname"
 echo 'PASS: macOS amd64/arm64 download, Mach-O checks and binary-only installation'
+
+# Uninstallation is independent of download/build tools and preserves user data.
+clean_install
+run --binary "$binary"
+cp /etc/servmon.yaml "$suite/uninstall-config"
+mkdir -p /etc/systemd/system/servmon.service.d
+echo retained > /etc/systemd/system/servmon.service.d/custom.conf
+echo retained > /var/lib/servmon/uninstall-sentinel
+for option in --build --download --no-start; do expect_fail --uninstall "$option"; done
+expect_fail --uninstall --binary "$binary"
+expect_fail --uninstall --repo example/servmon
+expect_fail --uninstall --version latest
+expect_fail --uninstall --config "$suite/replacement.yaml"
+expect_fail --uninstall --addr 127.0.0.1:8080
+expect_fail --purge
+[[ -x /usr/local/bin/servmon && -f $suite/state/active ]] || fail 'argument errors altered installation'
+
+touch "$suite/state/fail-stop"
+expect_fail --uninstall --purge
+[[ -x /usr/local/bin/servmon && -f /etc/systemd/system/servmon.service && -f $suite/state/active ]] || fail 'stop failure removed installation'
+cmp /etc/servmon.yaml "$suite/uninstall-config"
+[[ -f /var/lib/servmon/uninstall-sentinel ]] || fail 'stop failure purged data'
+touch "$suite/state/fail-disable"
+expect_fail --uninstall --purge
+[[ -x /usr/local/bin/servmon && -f /etc/systemd/system/servmon.service && -f $suite/state/enabled ]] || fail 'disable failure removed installation'
+[[ -f /var/lib/servmon/uninstall-sentinel ]] || fail 'disable failure purged data'
+echo 'PASS: uninstall rejects conflicting options and preserves files on service failures'
+
+: > "$suite/downloads"
+# Restricted PATH has no curl, wget, Go, checksum utility or installer utilities.
+mkdir "$suite/uninstall-tools"
+for tool in bash uname rm systemctl touch; do ln -s "$(command -v "$tool")" "$suite/uninstall-tools/$tool"; done
+touch "$suite/state/active"
+PATH="$suite/uninstall-tools" bash "$repo/install.sh" --uninstall
+[[ ! -e /usr/local/bin/servmon && ! -e /etc/systemd/system/servmon.service ]] || fail 'uninstall left program/unit'
+[[ ! -f $suite/state/active && ! -f $suite/state/enabled ]] || fail 'uninstall left service running/enabled'
+cmp /etc/servmon.yaml "$suite/uninstall-config"
+[[ -f /var/lib/servmon/uninstall-sentinel && -f /etc/systemd/system/servmon.service.d/custom.conf ]] || fail 'uninstall deleted retained files'
+[[ ! -s $suite/downloads ]] || fail 'uninstall downloaded files'
+run --uninstall
+echo 'PASS: uninstall stops/disables service, retains config/data/overrides and is repeatable'
+
+run --uninstall --purge
+run --uninstall --purge
+[[ ! -e /etc/servmon.yaml && ! -e /var/lib/servmon && ! -e /etc/systemd/system/servmon.service.d ]] || fail 'purge left default data'
+echo 'PASS: explicit purge removes defaults after an earlier uninstall and is repeatable'
+
+export TEST_SYSTEMD_RUNNING=0
+run --binary "$binary" --no-start
+printf enabled > "$suite/state/enabled"
+: > "$suite/state/calls"
+run --uninstall
+[[ ! -e /usr/local/bin/servmon && ! -f $suite/state/enabled ]] || fail 'offline uninstall failed'
+if grep -Eq '^(stop|daemon-reload) ' "$suite/state/calls"; then fail 'offline uninstall called live manager'; fi
+export TEST_SYSTEMD_RUNNING=1
+echo 'PASS: offline uninstall disables startup without a running systemd manager'
+
+# Purge must unlink symlinks without traversing into custom data/config paths.
+run --uninstall --purge
+mkdir -p "$suite/custom-data" "$suite/custom-overrides"
+echo retained > "$suite/custom-data/sentinel"
+echo retained > "$suite/custom-overrides/custom.conf"
+echo retained > "$suite/custom-config"
+ln -s "$suite/custom-config" /etc/servmon.yaml
+ln -s "$suite/custom-data" /var/lib/servmon
+ln -s "$suite/custom-overrides" /etc/systemd/system/servmon.service.d
+cat "$repo/install.sh" | bash -s -- --uninstall --purge
+[[ ! -L /etc/servmon.yaml && ! -L /var/lib/servmon && ! -L /etc/systemd/system/servmon.service.d ]] || fail 'purge left symlinks'
+[[ -f $suite/custom-config && -f $suite/custom-data/sentinel && -f $suite/custom-overrides/custom.conf ]] || fail 'purge followed a symlink'
+echo 'PASS: piped uninstall/purge preserves symlink targets and custom data'

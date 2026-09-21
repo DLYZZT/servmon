@@ -64,6 +64,26 @@ sudo ./install.sh --binary ./servmon-linux-amd64
 
 重复执行在线安装命令即可升级。Linux 上已有配置、令牌和数据会保留；启动失败时尝试回滚。离线安装使用 `--binary` 或 `--build`，更多选项见 `./install.sh --help`。
 
+## 卸载
+
+卸载程序（Linux 同时停止并禁用 systemd 服务），默认保留配置、令牌、历史数据和 systemd 自定义覆盖：
+
+```bash
+curl -fsSL https://github.com/DLYZZT/servmon/releases/latest/download/install.sh | sudo bash -s -- --uninstall
+# 已保存脚本时也可执行：
+sudo bash install.sh --uninstall
+```
+
+Linux 上同时删除默认配置 `/etc/servmon.yaml`、数据目录 `/var/lib/servmon` 和覆盖目录 `/etc/systemd/system/servmon.service.d`：
+
+```bash
+sudo bash install.sh --uninstall --purge
+```
+
+`--purge` 会永久删除上述路径中的配置、令牌和历史数据，仅能配合 `--uninstall` 使用。自定义配置和数据路径不会被删除；这些默认路径若是符号链接，只删除链接本身。普通卸载后仍可再次执行 `--uninstall --purge` 清理保留的数据。
+
+卸载过程无需联网或 Go，不能与安装选项混用。macOS 仅删除 `/usr/local/bin/servmon`，请先自行停止手动启动的进程或自建后台服务，配置和数据由用户管理，不支持 `--purge`。
+
 ## 自动构建与发布
 
 `.github/workflows/build.yml` 在分支推送、Pull Request 和手动触发时运行检查、安装测试，并生成以下四个二进制，打包为 Actions 的 `servmon-binaries` artifact：

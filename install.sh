@@ -15,6 +15,8 @@ Usage: sudo ./install.sh [options]
   --config PATH  Use this YAML file on first installation only.
   --addr ADDR    Listen address for generated config (default 127.0.0.1:8080).
   --no-start     Install files only; do not enable, start or restart the service.
+  --uninstall    Remove the binary and Linux service; preserve config and data.
+  --purge        With --uninstall, also remove Linux default config/data/overrides.
   -h, --help     Show this help.
 
 Without an explicit source, look for a matching local binary, then build if
@@ -22,6 +24,8 @@ source and Go are available, otherwise download a release with SHA-256 checking.
 --repo/--version imply --download. Downloads require curl or wget and a SHA-256
 utility. Linux installs a systemd service and preserves configuration/data.
 macOS installs only /usr/local/bin/servmon; run it with your own YAML config.
+Uninstallation needs no downloads or Go. Custom config/data paths are never
+deleted. On macOS, stop any manually started process before uninstalling.
 
 Paths:
   /usr/local/bin/servmon
@@ -43,7 +47,13 @@ config_source=''
 addr='127.0.0.1:8080'
 force_build=0
 no_start=0
+uninstall=0
+purge=0
+install_options=0
 while (($#)); do
+  case "$1" in
+    --binary|--config|--addr|--build|--download|--repo|--version|--no-start) install_options=1 ;;
+  esac
   case "$1" in
     --binary) need_value "$@"; binary=$2; shift 2 ;;
     --config) need_value "$@"; config_source=$2; shift 2 ;;
@@ -53,10 +63,14 @@ while (($#)); do
     --repo) need_value "$@"; release_repo=$2; download=1; shift 2 ;;
     --version) need_value "$@"; version=$2; download=1; shift 2 ;;
     --no-start) no_start=1; shift ;;
+    --uninstall) uninstall=1; shift ;;
+    --purge) purge=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) die "Unknown option: $1 (see --help)" ;;
   esac
 done
+((!purge || uninstall)) || die '--purge requires --uninstall'
+((!uninstall || !install_options)) || die '--uninstall cannot be combined with installation options'
 [[ -z $binary || $force_build == 0 ]] || die '--binary and --build cannot be combined'
 [[ $download == 0 || ( -z $binary && $force_build == 0 ) ]] || die '--download/--repo/--version cannot be combined with --binary/--build'
 [[ $version =~ ^[[:alnum:]][[:alnum:]._-]*$ ]] || die 'Invalid release version; use a tag such as v1.0.0'
@@ -69,6 +83,57 @@ if [[ $os == darwin && ( -n $config_source || $addr != 127.0.0.1:8080 ) ]]; then
   die '--config and --addr configure the Linux service only; on macOS provide YAML when running servmon'
 fi
 [[ $EUID == 0 ]] || die 'Run this installer as root, e.g. sudo ./install.sh'
+unit=/etc/systemd/system/servmon.service
+target=/usr/local/bin/servmon
+config=/etc/servmon.yaml
+
+uninstall_servmon() {
+  command -v rm >/dev/null 2>&1 || die 'Required command not found: rm'
+  [[ ! -d $target || -L $target ]] || die "Expected a file, found a directory: $target"
+  if [[ $os == darwin ]]; then
+    (( !purge )) || die '--purge is Linux-only; macOS config and data are managed manually'
+    rm -f -- "$target"
+    log 'Removed /usr/local/bin/servmon. Your macOS configuration and data were retained.'
+    log 'Manually started processes and custom background services must be stopped separately.'
+    return
+  fi
+  command -v systemctl >/dev/null 2>&1 || die 'Required command not found: systemctl'
+  [[ ! -d $unit || -L $unit ]] || die "Expected a file, found a directory: $unit"
+  if ((purge)); then
+    [[ ! -d $config || -L $config ]] || die "Expected a file, found a directory: $config"
+  fi
+  local running=0
+  if systemctl show-environment >/dev/null 2>&1; then running=1; fi
+  if ((running)); then
+    if [[ -e $unit || -L $unit ]] || systemctl is-active --quiet servmon.service; then
+      systemctl stop servmon.service || die 'Could not stop servmon.service; no files were removed'
+    fi
+  else
+    log 'systemd is not running; removing files and disabling offline startup links.'
+  fi
+  # Disable while the unit still exists; an unsuccessful stop/disable must not
+  # remove the executable or user data. Repeated uninstalls are harmless.
+  if [[ -e $unit || -L $unit ]]; then
+    systemctl disable servmon.service || die 'Could not disable servmon.service; no files were removed'
+  fi
+  rm -f -- "$target" "$unit"
+  if ((running)); then systemctl daemon-reload; fi
+  if ((purge)); then
+    # Fixed paths only, with no trailing slash: remove symlinks themselves,
+    # never their targets. Do not derive deletion paths from user YAML.
+    rm -f -- "$config"
+    rm -rf -- /var/lib/servmon /etc/systemd/system/servmon.service.d
+    log 'Removed default configuration, data and systemd overrides. Custom paths were retained.'
+  else
+    log 'Preserved /etc/servmon.yaml, /var/lib/servmon and systemd overrides.'
+  fi
+  log 'Uninstalled servmon.'
+}
+if ((uninstall)); then
+  uninstall_servmon
+  exit 0
+fi
+
 for command in install mktemp cp mv rm ln od tr cat dirname sleep; do
   command -v "$command" >/dev/null 2>&1 || die "Required command not found: $command"
 done
@@ -89,9 +154,6 @@ script_dir=''
 if [[ -n ${BASH_SOURCE[0]:-} && -f ${BASH_SOURCE[0]} ]]; then
   script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 fi
-unit=/etc/systemd/system/servmon.service
-target=/usr/local/bin/servmon
-config=/etc/servmon.yaml
 manager=0
 if [[ $os == linux ]]; then
   command -v systemctl >/dev/null 2>&1 || die 'Required command not found: systemctl'
