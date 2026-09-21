@@ -8,7 +8,7 @@ set -Eeuo pipefail
 repo=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
 case "$(uname -m)" in x86_64) arch=amd64;; aarch64) arch=arm64;; *) exit 1;; esac
 binary="$repo/bin/servmon-linux-$arch"
-[[ -f $binary ]] || { echo 'Run make linux first.' >&2; exit 1; }
+[[ -f $binary && -f $repo/bin/servmon-darwin-amd64 && -f $repo/bin/servmon-darwin-arm64 ]] || { echo 'Run make release first.' >&2; exit 1; }
 suite=$(mktemp -d)
 app_pid=''
 cleanup() { [[ -z $app_pid ]] || { kill "$app_pid" 2>/dev/null || true; wait "$app_pid" 2>/dev/null || true; }; rm -rf -- "$suite"; }
@@ -182,3 +182,125 @@ if command -v runuser >/dev/null 2>&1; then
   grep -q 'Run this installer as root' "$suite/nonroot" || fail 'unexpected non-root error'
   echo 'PASS: non-root user is rejected before file changes'
 fi
+
+# Mock GitHub transport so download tests stay deterministic and network-free.
+clean_install
+mkdir -p "$suite/releases" "$suite/standalone"
+cp "$repo/install.sh" "$suite/standalone/install.sh"
+cp "$repo"/bin/servmon-linux-* "$repo"/bin/servmon-darwin-* "$suite/releases/"
+(cd "$suite/releases" && sha256sum servmon-* > checksums.txt)
+export TEST_RELEASE_DIR="$suite/releases"
+export TEST_DOWNLOAD_LOG="$suite/downloads"
+export TEST_DOWNLOAD_FAILURE=''
+cat > "$suite/mock/curl" <<'DOWNLOAD'
+#!/usr/bin/env bash
+set -eu
+while [[ $# -gt 0 && $1 != --output ]]; do shift; done
+[[ $# == 3 && $1 == --output ]]
+out=$2 url=$3
+printf '%s\n' "$url" >> "$TEST_DOWNLOAD_LOG"
+case "$url" in
+  https://github.com/example/servmon/releases/latest/download/*|https://github.com/example/servmon/releases/download/v1.2.3/*) ;;
+  *) exit 22 ;;
+esac
+asset=${url##*/}
+[[ $TEST_DOWNLOAD_FAILURE != "$asset" ]] || exit 22
+cp "$TEST_RELEASE_DIR/$asset" "$out"
+DOWNLOAD
+chmod +x "$suite/mock/curl"
+expect_fail --repo example/servmon --binary "$binary"
+expect_fail --repo example/servmon --build
+expect_fail --repo example/servmon --version '../bad'
+expect_fail --repo 'example/servmon?bad'
+expect_fail --repo
+expect_fail --version
+run --repo example/servmon --version v1.2.3 --no-start
+cmp "$binary" /usr/local/bin/servmon
+grep -q "/download/v1.2.3/servmon-linux-$arch$" "$suite/downloads" || fail 'versioned release URL'
+echo 'PASS: pinned release download and checksum validation'
+
+clean_install
+(cd /tmp && SERVMON_REPO=example/servmon bash "$suite/standalone/install.sh" --no-start)
+cmp "$binary" /usr/local/bin/servmon
+grep -q "/latest/download/servmon-linux-$arch$" "$suite/downloads" || fail 'latest release URL'
+echo 'PASS: standalone script automatically downloads latest release'
+
+clean_install
+# Emulate the repository-aware install.sh attached by the release workflow.
+sed "s|^default_repo=.*$|default_repo='example/servmon'|" "$repo/install.sh" > "$suite/release-install.sh"
+cat "$suite/release-install.sh" | bash -s -- --download --no-start
+cmp "$binary" /usr/local/bin/servmon
+echo 'PASS: release installer works through stdin without --repo'
+
+cp /etc/servmon.yaml "$suite/online-config"
+cp /etc/systemd/system/servmon.service "$suite/online-unit"
+cp "$suite/releases/checksums.txt" "$suite/good-checksums"
+# A corrupt download must leave a working installation untouched.
+printf '\ncorruption\n' >> "$suite/releases/servmon-linux-$arch"
+expect_fail --repo example/servmon --no-start
+grep -q 'SHA-256 checksum mismatch' "$suite/error" || fail 'corrupt download accepted'
+cmp "$binary" /usr/local/bin/servmon
+cmp /etc/servmon.yaml "$suite/online-config"
+cmp /etc/systemd/system/servmon.service "$suite/online-unit"
+cp "$binary" "$suite/releases/servmon-linux-$arch"
+: > "$suite/releases/checksums.txt"
+expect_fail --repo example/servmon --no-start
+grep -q 'Release checksum not found' "$suite/error" || fail 'missing checksum accepted'
+cat "$suite/good-checksums" "$suite/good-checksums" > "$suite/releases/checksums.txt"
+expect_fail --repo example/servmon --no-start
+grep -q 'Invalid or duplicate' "$suite/error" || fail 'duplicate checksum accepted'
+cp "$suite/good-checksums" "$suite/releases/checksums.txt"
+export TEST_DOWNLOAD_FAILURE=checksums.txt
+expect_fail --repo example/servmon --no-start
+export TEST_DOWNLOAD_FAILURE="servmon-linux-$arch"
+expect_fail --repo example/servmon --no-start
+export TEST_DOWNLOAD_FAILURE=''
+cmp "$binary" /usr/local/bin/servmon
+echo 'PASS: corrupt, missing, duplicate and failed downloads preserve installation'
+
+# Restrict PATH to exercise wget and shasum without curl or sha256sum.
+mkdir "$suite/fallback"
+for tool in bash uname install mktemp cp mv rm ln od tr cat dirname sleep systemctl; do
+  ln -s "$(command -v "$tool")" "$suite/fallback/$tool"
+done
+# The slim test image has no Perl Digest::SHA; validate the shasum invocation
+# and compute a real checksum with the system tool outside the restricted PATH.
+cat > "$suite/fallback/shasum" <<'SHASUM'
+#!/usr/bin/env bash
+set -eu
+[[ $# == 3 && $1 == -a && $2 == 256 ]]
+exec /usr/bin/sha256sum "$3"
+SHASUM
+cat > "$suite/fallback/wget" <<'WGET'
+#!/usr/bin/env bash
+set -eu
+while [[ $# -gt 0 && $1 != --output-document ]]; do shift; done
+[[ $# == 3 && $1 == --output-document ]]
+cp "$TEST_RELEASE_DIR/${3##*/}" "$2"
+WGET
+chmod +x "$suite/fallback/wget" "$suite/fallback/shasum"
+PATH="$suite/fallback" bash "$repo/install.sh" --repo example/servmon --no-start
+cmp "$binary" /usr/local/bin/servmon
+echo 'PASS: wget and shasum fallback'
+
+# Exercise macOS installation safely inside the disposable container.
+clean_install
+cat > "$suite/mock/uname" <<'UNAME'
+#!/usr/bin/env bash
+case "$1" in -s) echo Darwin;; -m) echo "$TEST_MAC_ARCH";; *) exit 1;; esac
+UNAME
+chmod +x "$suite/mock/uname"
+for mac_arch in amd64 arm64; do
+  export TEST_MAC_ARCH=$mac_arch
+  : > "$suite/state/calls"
+  run --repo example/servmon --no-start
+  cmp "$repo/bin/servmon-darwin-$mac_arch" /usr/local/bin/servmon
+  [[ ! -e /etc/servmon.yaml && ! -e /etc/systemd/system/servmon.service ]] || fail 'macOS installed Linux config/unit'
+  [[ ! -s $suite/state/calls ]] || fail 'macOS called systemctl'
+  expect_fail --binary "$binary"
+  expect_fail --binary "$repo/bin/servmon-darwin-$mac_arch" --config "$suite/replacement.yaml"
+  if [[ $mac_arch == amd64 ]]; then other_arch=arm64; else other_arch=amd64; fi
+  expect_fail --binary "$repo/bin/servmon-darwin-$other_arch"
+done
+rm "$suite/mock/uname"
+echo 'PASS: macOS amd64/arm64 download, Mach-O checks and binary-only installation'

@@ -9,13 +9,34 @@
 
 ## 快速安装
 
-适用于 Linux amd64 / arm64，需要 Bash、systemd 和 root 权限。在已安装 Go 1.22+ 的源码目录中执行：
+支持 Linux / macOS 的 x86_64（amd64）和 ARM64（arm64）。在线安装无需 Go，需要 Bash、curl 或 wget、SHA-256 工具和 root 权限；Linux 还需要 systemd。
+
+从 GitHub Releases 安装最新正式版本：
+
+```bash
+curl -fsSL https://github.com/DLYZZT/servmon/releases/latest/download/install.sh -o install.sh
+sudo bash install.sh --download
+# 指定版本，或使用源码仓库里的安装脚本：
+sudo bash install.sh --repo DLYZZT/servmon --version v0.1
+```
+
+安装脚本默认使用 `DLYZZT/servmon`；也可用 `--repo` 或 `SERVMON_REPO` 指定其他仓库。Release 附带的脚本会自动带入发布仓库名。支持管道执行：
+
+```bash
+curl -fsSL https://github.com/DLYZZT/servmon/releases/latest/download/install.sh | sudo bash -s -- --download
+```
+
+脚本自动检测系统和架构，下载对应二进制并验证 `checksums.txt` 中的 SHA-256。`--download` 强制在线安装，`--repo` / `--version` 隐含此选项；不指定来源时，依次尝试本地二进制、源码编译和在线下载。
+
+在已安装 Go 1.22+ 的源码目录中也可执行：
 
 ```bash
 sudo ./install.sh --build
 ```
 
-脚本安装二进制、生成管理 / 只读令牌，并启用开机自启。默认监听 `127.0.0.1:8080`，服务以 root 运行。
+Linux 上脚本安装二进制、生成管理 / 只读令牌，并启用开机自启。默认监听 `127.0.0.1:8080`，服务以 root 运行。
+
+macOS 上仅安装 `/usr/local/bin/servmon`，不创建后台服务；请按下方「手动安装」准备 YAML 配置（设置令牌及可写的 `data_dir`），然后执行 `servmon -config ./servmon.yaml`。systemd 服务监控与控制仅适用于 Linux。
 
 | 内容 | 路径 |
 |---|---|
@@ -40,7 +61,20 @@ sudo ./install.sh --binary ./servmon-linux-amd64
 # arm64 使用 ./servmon-linux-arm64
 ```
 
-重复执行即可升级，已有配置、令牌和数据会保留；启动失败时尝试回滚。脚本不下载发布文件，更多选项见 `./install.sh --help`。
+重复执行在线安装命令即可升级。Linux 上已有配置、令牌和数据会保留；启动失败时尝试回滚。离线安装使用 `--binary` 或 `--build`，更多选项见 `./install.sh --help`。
+
+## 自动构建与发布
+
+`.github/workflows/build.yml` 在分支推送、Pull Request 和手动触发时运行检查、安装测试，并生成以下四个二进制，打包为 Actions 的 `servmon-binaries` artifact：
+
+| 平台 | 文件 |
+|---|---|
+| macOS Intel x86_64 | `servmon-darwin-amd64` |
+| macOS Apple Silicon ARM64 | `servmon-darwin-arm64` |
+| Linux x86_64 | `servmon-linux-amd64` |
+| Linux ARM64 | `servmon-linux-arm64` |
+
+推送 `v*` 标签（例如 `v1.0.0`）会在检查成功后自动创建 GitHub Release，并上传四个二进制、`checksums.txt`、带仓库名的 `install.sh` 和配置示例。包含 `-` 的标签（例如 `v1.0.0-rc.1`）标记为预发布，在线安装时需用 `--version` 指定。普通分支构建不会发布 Release；需要在仓库中启用 GitHub Actions。
 
 ## 手动安装
 
@@ -102,7 +136,8 @@ servmon/
 │   └── web/               # 内嵌网页资源
 ├── tests/                 # 前端与安装脚本测试
 ├── Makefile               # 构建、测试与开发命令
-├── install.sh             # Linux / systemd 安装与升级
+├── install.sh             # 在线 / 离线安装；Linux systemd、macOS 二进制
+├── .github/workflows/     # 四平台构建与版本发布
 ├── go.mod / go.sum        # Go 模块与依赖
 ├── servmon.example.yaml   # 配置示例
 └── README.md
@@ -117,6 +152,8 @@ make                       # 构建 bin/servmon
 make check                 # Go 竞态测试、vet、JS 测试和脚本语法检查
 make test-web              # 仅运行前端测试
 make linux                 # 交叉编译 Linux amd64 / arm64
+make darwin                # 交叉编译 macOS amd64 / arm64
+make release               # 编译上述全部四个平台
 make test-install          # 在隔离 Docker 容器中测试安装与回滚
 make fmt                   # 格式化 Go 代码
 make help                  # 查看全部命令

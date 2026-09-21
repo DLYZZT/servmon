@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install a local servmon binary (or build this checkout) on Linux/systemd.
+# Install servmon from GitHub Releases, a local binary, or this checkout.
 set -Eeuo pipefail
 umask 077
 
@@ -7,16 +7,21 @@ usage() {
   cat <<'HELP'
 Usage: sudo ./install.sh [options]
 
-  --binary PATH  Install this Linux amd64/arm64 binary.
+  --binary PATH  Install this local binary (must match the host).
   --build        Build ./src from this checkout (requires Go).
+  --download     Download a release, ignoring local binaries and source.
+  --repo OWNER/REPO  GitHub repository (default DLYZZT/servmon; or SERVMON_REPO).
+  --version TAG  Download this release tag (default: latest stable release).
   --config PATH  Use this YAML file on first installation only.
   --addr ADDR    Listen address for generated config (default 127.0.0.1:8080).
   --no-start     Install files only; do not enable, start or restart the service.
   -h, --help     Show this help.
 
-Without --binary/--build, look for a matching binary beside the script or in
-bin/, then build from source if Go is available. Existing /etc/servmon.yaml
-and monitoring data are preserved. No downloads of release binaries are made.
+Without an explicit source, look for a matching local binary, then build if
+source and Go are available, otherwise download a release with SHA-256 checking.
+--repo/--version imply --download. Downloads require curl or wget and a SHA-256
+utility. Linux installs a systemd service and preserves configuration/data.
+macOS installs only /usr/local/bin/servmon; run it with your own YAML config.
 
 Paths:
   /usr/local/bin/servmon
@@ -30,6 +35,10 @@ die() { printf '[servmon] ERROR: %s\n' "$*" >&2; exit 1; }
 need_value() { [[ $# -ge 2 && -n $2 && $2 != --* ]] || die "$1 requires a value"; }
 
 binary=''
+default_repo='DLYZZT/servmon'
+release_repo=${SERVMON_REPO:-$default_repo}
+version=latest
+download=0
 config_source=''
 addr='127.0.0.1:8080'
 force_build=0
@@ -40,20 +49,32 @@ while (($#)); do
     --config) need_value "$@"; config_source=$2; shift 2 ;;
     --addr) need_value "$@"; addr=$2; shift 2 ;;
     --build) force_build=1; shift ;;
+    --download) download=1; shift ;;
+    --repo) need_value "$@"; release_repo=$2; download=1; shift 2 ;;
+    --version) need_value "$@"; version=$2; download=1; shift 2 ;;
     --no-start) no_start=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) die "Unknown option: $1 (see --help)" ;;
   esac
 done
 [[ -z $binary || $force_build == 0 ]] || die '--binary and --build cannot be combined'
-[[ $(uname -s) == Linux ]] || die 'This installer requires Linux'
+[[ $download == 0 || ( -z $binary && $force_build == 0 ) ]] || die '--download/--repo/--version cannot be combined with --binary/--build'
+[[ $version =~ ^[[:alnum:]][[:alnum:]._-]*$ ]] || die 'Invalid release version; use a tag such as v1.0.0'
+case "$(uname -s)" in
+  Linux) os=linux ;;
+  Darwin) os=darwin ;;
+  *) die 'This installer supports Linux and macOS' ;;
+esac
+if [[ $os == darwin && ( -n $config_source || $addr != 127.0.0.1:8080 ) ]]; then
+  die '--config and --addr configure the Linux service only; on macOS provide YAML when running servmon'
+fi
 [[ $EUID == 0 ]] || die 'Run this installer as root, e.g. sudo ./install.sh'
-for command in install mktemp cp mv rm ln od tr cat dirname sleep systemctl; do
+for command in install mktemp cp mv rm ln od tr cat dirname sleep; do
   command -v "$command" >/dev/null 2>&1 || die "Required command not found: $command"
 done
 case "$(uname -m)" in
-  x86_64|amd64) arch=amd64; machine='62 0' ;;
-  aarch64|arm64) arch=arm64; machine='183 0' ;;
+  x86_64|amd64) arch=amd64; machine='62 0'; macho_cpu=07000001 ;;
+  aarch64|arm64) arch=arm64; machine='183 0'; macho_cpu=0c000001 ;;
   *) die "Unsupported architecture: $(uname -m) (supported: amd64, arm64)" ;;
 esac
 # Keep generated YAML a single, unambiguous quoted scalar.
@@ -63,21 +84,31 @@ fi
 port=${BASH_REMATCH[2]}
 ((10#$port >= 1 && 10#$port <= 65535)) || die 'Port must be between 1 and 65535'
 
-script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+# BASH_SOURCE is unset when invoked with curl | bash under nounset.
+script_dir=''
+if [[ -n ${BASH_SOURCE[0]:-} && -f ${BASH_SOURCE[0]} ]]; then
+  script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+fi
 unit=/etc/systemd/system/servmon.service
 target=/usr/local/bin/servmon
 config=/etc/servmon.yaml
 manager=0
-if systemctl show-environment >/dev/null 2>&1; then manager=1; fi
-((manager || no_start)) || die 'systemd is not running; use --no-start to install files in an offline image'
+if [[ $os == linux ]]; then
+  command -v systemctl >/dev/null 2>&1 || die 'Required command not found: systemctl'
+  if systemctl show-environment >/dev/null 2>&1; then manager=1; fi
+  ((manager || no_start)) || die 'systemd is not running; use --no-start to install files in an offline image'
+fi
 # Reject directories before writing anything. Preserve existing config symlinks.
-for path in "$target" "$unit" "$config"; do
-  [[ ! -d $path ]] || die "Expected a file, found a directory: $path"
-done
-if [[ -L $config && ! -e $config ]]; then die "Dangling configuration symlink: $config"; fi
-[[ ! -e $config || -f $config ]] || die "Configuration is not a regular file: $config"
-if [[ ! -e $config && -n $config_source ]]; then
-  [[ -f $config_source && -r $config_source ]] || die "Cannot read config: $config_source"
+[[ ! -d $target ]] || die "Expected a file, found a directory: $target"
+if [[ $os == linux ]]; then
+  for path in "$unit" "$config"; do
+    [[ ! -d $path ]] || die "Expected a file, found a directory: $path"
+  done
+  if [[ -L $config && ! -e $config ]]; then die "Dangling configuration symlink: $config"; fi
+  [[ ! -e $config || -f $config ]] || die "Configuration is not a regular file: $config"
+  if [[ ! -e $config && -n $config_source ]]; then
+    [[ -f $config_source && -r $config_source ]] || die "Cannot read config: $config_source"
+  fi
 fi
 
 work_dir=$(mktemp -d)
@@ -132,23 +163,73 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-if [[ -z $binary && $force_build == 0 ]]; then
+download_release() {
+  [[ $release_repo =~ ^[[:alnum:]_.-]+/[[:alnum:]_.-]+$ ]] || die 'Specify the GitHub repository with --repo OWNER/REPO or SERVMON_REPO'
+  local asset="servmon-$os-$arch" base digest name extra expected='' actual
+  local -a fetch hash
+  if command -v curl >/dev/null 2>&1; then
+    fetch=(curl --fail --silent --show-error --location --retry 3 --connect-timeout 15 --max-time 300 --proto '=https' --proto-redir '=https' --output)
+  elif command -v wget >/dev/null 2>&1; then
+    fetch=(wget --quiet --https-only --tries=3 --timeout=30 --output-document)
+  else
+    die 'Online installation requires curl or wget'
+  fi
+  if command -v sha256sum >/dev/null 2>&1; then hash=(sha256sum)
+  elif command -v shasum >/dev/null 2>&1; then hash=(shasum -a 256)
+  else die 'Online installation requires sha256sum or shasum'; fi
+  base="https://github.com/$release_repo/releases"
+  if [[ $version == latest ]]; then base+='/latest/download'
+  else base+="/download/$version"; fi
+  log "Downloading $release_repo ($version), $os/$arch..."
+  "${fetch[@]}" "$work_dir/checksums.txt" "$base/checksums.txt" || die 'Could not download release checksums; check the repository and version'
+  while read -r digest name extra; do
+    if [[ $name == "$asset" ]]; then
+      [[ -z $expected && -z $extra && $digest =~ ^[0-9a-f]{64}$ ]] || die 'Invalid or duplicate release checksum'
+      expected=$digest
+    fi
+  done < "$work_dir/checksums.txt"
+  [[ -n $expected ]] || die "Release checksum not found for $asset"
+  "${fetch[@]}" "$work_dir/servmon" "$base/$asset" || die "Could not download $asset"
+  actual=$("${hash[@]}" "$work_dir/servmon")
+  [[ ${actual%% *} == "$expected" ]] || die "SHA-256 checksum mismatch for $asset"
+  binary=$work_dir/servmon
+}
+
+if [[ -n $script_dir && -z $binary && $force_build == 0 && $download == 0 ]]; then
   for candidate in \
-    "$script_dir/bin/servmon-linux-$arch" \
-    "$script_dir/servmon-linux-$arch" \
+    "$script_dir/bin/servmon-$os-$arch" \
+    "$script_dir/servmon-$os-$arch" \
     "$script_dir/bin/servmon" \
     "$script_dir/servmon"; do
     if [[ -f $candidate ]]; then binary=$candidate; break; fi
   done
 fi
 if [[ -z $binary ]]; then
-  [[ -f $script_dir/go.mod && -d $script_dir/src ]] || die 'No binary/source found; pass --binary PATH'
-  command -v go >/dev/null 2>&1 || die 'Building from source requires Go; alternatively run make linux elsewhere and pass --binary PATH'
-  log "Building Linux/$arch from source..."
-  (cd -- "$script_dir" && CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -trimpath -ldflags='-s -w' -o "$work_dir/servmon" ./src)
-  binary=$work_dir/servmon
+  if ((download)); then
+    download_release
+  elif ((force_build)) || { [[ -n $script_dir && -f $script_dir/go.mod && -d $script_dir/src ]] && command -v go >/dev/null 2>&1; }; then
+    [[ -n $script_dir && -f $script_dir/go.mod && -d $script_dir/src ]] || die 'No source checkout found; --build requires go.mod and src beside the script'
+    command -v go >/dev/null 2>&1 || die 'Building from source requires Go'
+    log "Building $os/$arch from source..."
+    (cd -- "$script_dir" && CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags='-s -w' -o "$work_dir/servmon" ./src)
+    binary=$work_dir/servmon
+  else
+    download_release
+  fi
 fi
 [[ -f $binary && -r $binary ]] || die "Cannot read binary: $binary"
+if [[ $os == darwin ]]; then
+  magic=$(od -An -N8 -tx1 "$binary" | tr -d ' \n')
+  [[ $magic == "cffaedfe$macho_cpu" ]] || die "Binary is not a matching macOS/$arch Mach-O executable: $binary"
+  [[ -d /usr/local/bin ]] || install -d -m 0755 /usr/local/bin
+  staged_binary=$(mktemp /usr/local/bin/.servmon-install.XXXXXX)
+  install -m 0755 "$binary" "$staged_binary"
+  mv -f "$staged_binary" "$target"
+  success=1
+  log "Installed macOS/$arch: $target"
+  log 'Run: servmon -config /path/to/servmon.yaml (set token and a writable data_dir). No background service was created.'
+  exit 0
+fi
 magic=$(od -An -N6 -tx1 -- "$binary" | tr -d ' \n')
 [[ $magic == 7f454c460201 ]] || die "Not a 64-bit little-endian Linux ELF binary: $binary"
 actual_machine=$(od -An -j18 -N2 -tu1 -- "$binary")

@@ -6,7 +6,7 @@ NODE ?= node
 LDFLAGS ?= -s -w
 ARGS ?=
 
-.PHONY: build run test vet check check-js test-web check-install test-install fmt linux linux-amd64 linux-arm64 clean help
+.PHONY: build run test vet check check-js test-web check-install test-install fmt release linux linux-amd64 linux-arm64 darwin darwin-amd64 darwin-arm64 clean help
 
 build:
 	mkdir -p bin
@@ -37,7 +37,7 @@ check-install:
 	bash -n install.sh tests/install.test.sh
 
 # Writes only inside a disposable container; source checkout is read-only.
-test-install: linux check-install
+test-install: release check-install
 	docker run --rm --network none -v "$(CURDIR):/work:ro" --entrypoint bash node:22-bookworm-slim /work/tests/install.test.sh
 
 fmt:
@@ -45,17 +45,17 @@ fmt:
 
 linux: linux-amd64 linux-arm64
 
-linux-amd64:
-	mkdir -p bin
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GO) build -trimpath -ldflags="$(LDFLAGS)" -o bin/servmon-linux-amd64 ./src
+darwin: darwin-amd64 darwin-arm64
 
-linux-arm64:
+release: linux darwin
+
+linux-amd64 linux-arm64 darwin-amd64 darwin-arm64:
 	mkdir -p bin
-	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 $(GO) build -trimpath -ldflags="$(LDFLAGS)" -o bin/servmon-linux-arm64 ./src
+	CGO_ENABLED=0 GOOS=$(word 1,$(subst -, ,$@)) GOARCH=$(word 2,$(subst -, ,$@)) $(GO) build -trimpath -ldflags="$(LDFLAGS)" -o bin/servmon-$@ ./src
 
 # Only remove known build outputs; keep configuration and monitoring data.
 clean:
-	rm -f bin/servmon bin/servmon-linux-amd64 bin/servmon-linux-arm64
+	rm -f bin/servmon bin/servmon-linux-amd64 bin/servmon-linux-arm64 bin/servmon-darwin-amd64 bin/servmon-darwin-arm64
 
 help:
 	@printf '%s\n' \
@@ -71,4 +71,6 @@ help:
 	  'make linux         Build Linux amd64 and arm64 binaries' \
 	  'make linux-amd64   Build only the Linux amd64 binary' \
 	  'make linux-arm64   Build only the Linux arm64 binary' \
-	  'make clean         Remove the three known binaries from bin/'
+	  'make darwin        Build macOS amd64 and arm64 binaries' \
+	  'make release       Build all four release binaries' \
+	  'make clean         Remove known binaries from bin/'
