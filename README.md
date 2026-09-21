@@ -34,9 +34,9 @@ servmon/
 │   ├── main.go            # 采样器、数据结构和网页嵌入
 │   ├── *_test.go          # 后端测试
 │   └── web/               # 内嵌 HTML / CSS / JavaScript / PWA 资源
-├── scripts/               # 性能对比等开发脚本
+├── scripts/               # 本地性能对比等开发脚本，不提交 Git
 ├── tests/                 # 国际化与布局的前端测试
-├── test-results/          # 已保存的测试结果
+├── test-results/          # 本地测试结果，不提交 Git
 ├── bin/                   # 构建产物，不提交 Git
 ├── Makefile               # 统一构建、测试与运行入口
 ├── install.sh             # Linux / systemd 安装与升级
@@ -196,4 +196,4 @@ PWA 安装要求 HTTPS 或 localhost。离线时保留最后一次数据并明�
 
 本地验收记录保存在 `docs/TESTING.md`，包含自动化测试、性能测量、Computer Use 操作结果及平台验证限制。该文件不提交 Git，克隆仓库后不会自带。
 
-性能比较工具：`python3 scripts/benchmark.py --baseline /path/to/old --candidate /path/to/new`，默认运行 600 秒并输出累计 CPU 时间及比值。
+本地性能比较工具：`python3 scripts/benchmark.py --baseline /path/to/old --candidate /path/to/new`，默认运行 600 秒并输出累计 CPU 时间及比值。`scripts/` 与 `test-results/` 不提交 Git，克隆仓库后不会自带。

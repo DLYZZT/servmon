@@ -12,3 +12,7 @@ servmon.yaml
 /docs/plan.md
 /docs/TESTING.md
 /docs/testing.md
+
+# 本地开发脚本与测试结果
+/scripts/
+/test-results/
