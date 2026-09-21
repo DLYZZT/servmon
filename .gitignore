@@ -2,17 +2,8 @@
 /bin/
 servmon
 servmon-*
-
-# 本机配置（含令牌），只提交示例文件
 servmon.yaml
-
 .DS_Store
-
-# 本地计划与验收记录
-/docs/plan.md
-/docs/TESTING.md
-/docs/testing.md
-
-# 本地开发脚本与测试结果
+/docs
 /scripts/
 /test-results/
